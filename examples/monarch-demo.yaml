@@ -16,13 +16,6 @@ spec:
         # Ensure we always try to pull (helpful during development)
         imagePullPolicy: Always
 
-        # We use the default CMD from your Dockerfile ("python -u worker.py")
-        # But we open the port for the mesh
-        ports:
-        - name: monarch
-          containerPort: 26600
-
-        # (Optional) Environment variables if your script needs them
         env:
         # TODO: Remove after thedavekwon merges his PR.
         # On containers where parent pid=1, the proc_mesh exits quickly without this envvar.
