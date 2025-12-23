@@ -33,6 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -46,9 +47,16 @@ type MonarchMeshSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of MonarchMesh. Edit monarchmesh_types.go to remove/update
+	// +kubebuilder:validation:Minimum=1
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Replicas *int32 `json:"replicas,omitempty"`
+
+	// STANDARD WAY: Use the core K8s type.
+	// We add PreserveUnknownFields so the API server accepts fields
+	// (like metadata.labels) even if it doesn't have a perfect schema for them.
+	// +kubebuilder:validation:XPreserveUnknownFields
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Template corev1.PodTemplateSpec `json:"template"`
 }
 
 // MonarchMeshStatus defines the observed state of MonarchMesh.
@@ -62,6 +70,16 @@ type MonarchMeshStatus struct {
 	// conditions represent the current state of the MonarchMesh resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
 	//
+	// +optional
+	Replicas int32 `json:"replicas"`
+	// +optional
+	ReadyReplicas int32 `json:"readyReplicas"`
+	// +optional
+	ServiceName string `json:"serviceName,omitempty"`
+
+	// conditions represent the current state of the MonarchMesh resource.
+	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
+	//
 	// Standard condition types include:
 	// - "Available": the resource is fully functional
 	// - "Progressing": the resource is being created or updated
@@ -71,11 +89,13 @@ type MonarchMeshStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:storageversion
+// +kubebuilder:resource:path=monarchmeshes,scope=Namespaced
 
 // MonarchMesh is the Schema for the monarchmeshes API
 type MonarchMesh struct {
