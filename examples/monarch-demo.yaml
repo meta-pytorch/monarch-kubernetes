@@ -1,14 +1,11 @@
 apiVersion: pytorch.monarch.io/v1
 kind: MonarchMesh
 metadata:
-  name: monarch-demo-7
+  name: monarch_demo7
   namespace: monarch-workspace
 spec:
   replicas: 2
   template:
-    metadata:
-      labels:
-        app: monarch-worker
     spec:
       containers:
       - name: worker
