@@ -1,10 +1,11 @@
 apiVersion: pytorch.monarch.io/v1
 kind: MonarchMesh
 metadata:
-  name: monarch_demo7
+  name: monarch_demo
   namespace: monarch-workspace
 spec:
   replicas: 2
+  port: 26600
   template:
     spec:
       containers:
@@ -23,8 +24,6 @@ spec:
 
         # (Optional) Environment variables if your script needs them
         env:
-        - name: MONARCH_PORT
-          value: "26600"
         # TODO: Remove after thedavekwon merges his PR.
         # On containers where parent pid=1, the proc_mesh exits quickly without this envvar.
         - name: HYPERACTOR_MESH_BOOTSTRAP_ENABLE_PDEATHSIG
