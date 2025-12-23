@@ -38,12 +38,12 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	monarchv1 "github.com/meta-pytorch/monarch-kubernetes/api/v1"
@@ -71,7 +71,7 @@ type MonarchMeshReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.4/pkg/reconcile
 func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	log := log.FromContext(ctx)
 
 	// 1. Fetch the Mesh Object
 	var mesh monarchv1.MonarchMesh
@@ -83,61 +83,55 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	labels := map[string]string{"monarch-mesh": mesh.Name, "app": "monarch-worker"}
 	svcName := mesh.Name + "-svc"
 
-	// 3. Ensure Headless Service
+	// 3. Ensure Headless Service using CreateOrUpdate
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: svcName, Namespace: mesh.Namespace, Labels: labels},
-		Spec: corev1.ServiceSpec{
-			ClusterIP: "None",
-			Selector:  labels,
-			Ports:     []corev1.ServicePort{{Name: "monarch", Port: 26600}},
-		},
+		ObjectMeta: metav1.ObjectMeta{Name: svcName, Namespace: mesh.Namespace},
 	}
-	// Create Service
-	// TODO: Use CreateOrUpdate instead of Create here.
-	if err := r.Client.Create(ctx, svc); err != nil && !errors.IsAlreadyExists(err) {
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		svc.Labels = labels
+		svc.Spec.ClusterIP = "None"
+		svc.Spec.Selector = labels
+		svc.Spec.Ports = []corev1.ServicePort{{Name: "monarch", Port: 26600}}
+		return ctrl.SetControllerReference(&mesh, svc, r.Scheme)
+	})
+	if err != nil {
+		log.Error(err, "Failed to create or update Service")
 		return ctrl.Result{}, err
 	}
 
-	// 4. Ensure StatefulSet
+	// 4. Ensure StatefulSet using CreateOrUpdate
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: mesh.Name, Namespace: mesh.Namespace},
-		Spec: appsv1.StatefulSetSpec{
-			Replicas:    mesh.Spec.Replicas,
-			ServiceName: svcName,
-			Selector:    &metav1.LabelSelector{MatchLabels: labels},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels, // Force our labels
-				},
-				Spec: mesh.Spec.Template.Spec, // Passthrough user spec
-			},
-		},
 	}
-
-	// Set OwnerRef so deleting Mesh deletes everything
-	ctrl.SetControllerReference(&mesh, ss, r.Scheme)
-
-	foundSS := &appsv1.StatefulSet{}
-	err := r.Get(ctx, client.ObjectKey{Name: ss.Name, Namespace: ss.Namespace}, foundSS)
-	if err != nil && errors.IsNotFound(err) {
-		r.Client.Create(ctx, ss)
-	} else if err == nil {
-		foundSS.Spec = ss.Spec
-		r.Client.Update(ctx, foundSS)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ss, func() error {
+		ss.Labels = labels
+		ss.Spec.Replicas = mesh.Spec.Replicas
+		ss.Spec.ServiceName = svcName
+		ss.Spec.Selector = &metav1.LabelSelector{MatchLabels: labels}
+		ss.Spec.Template.ObjectMeta.Labels = labels
+		ss.Spec.Template.Spec = mesh.Spec.Template.Spec
+		return ctrl.SetControllerReference(&mesh, ss, r.Scheme)
+	})
+	if err != nil {
+		log.Error(err, "Failed to create or update StatefulSet")
+		return ctrl.Result{}, err
 	}
 
 	// 5. Update Status
-	mesh.Status.Replicas = foundSS.Status.Replicas
-	mesh.Status.ReadyReplicas = foundSS.Status.ReadyReplicas
+	mesh.Status.Replicas = ss.Status.Replicas
+	mesh.Status.ReadyReplicas = ss.Status.ReadyReplicas
 	mesh.Status.ServiceName = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, mesh.Namespace)
 
 	condition := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: "Waiting"}
-	if foundSS.Status.ReadyReplicas == *mesh.Spec.Replicas {
+	if mesh.Spec.Replicas != nil && ss.Status.ReadyReplicas == *mesh.Spec.Replicas {
 		condition = metav1.Condition{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllReady"}
 	}
 	meta.SetStatusCondition(&mesh.Status.Conditions, condition)
 
-	r.Status().Update(ctx, &mesh)
+	if err := r.Status().Update(ctx, &mesh); err != nil {
+		log.Error(err, "Failed to update MonarchMesh status")
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -146,6 +140,7 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 func (r *MonarchMeshReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&monarchv1.MonarchMesh{}).
+		// Reconcile on changes to the StatefulSet.
 		Owns(&appsv1.StatefulSet{}).
 		Complete(r)
 }

@@ -67,9 +67,6 @@ type MonarchMeshStatus struct {
 	// For Kubernetes API conventions, see:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
 
-	// conditions represent the current state of the MonarchMesh resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
 	// +optional
 	Replicas int32 `json:"replicas"`
 	// +optional
