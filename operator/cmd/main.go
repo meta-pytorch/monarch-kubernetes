@@ -165,6 +165,7 @@ func main() {
 	if err := (&controller.MonarchMeshReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Config: controller.DefaultConfig(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "MonarchMesh")
 		os.Exit(1)

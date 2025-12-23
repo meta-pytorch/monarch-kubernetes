@@ -53,7 +53,15 @@ import (
 type MonarchMeshReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Config Config
 }
+
+// RBAC permissions for the controller:
+// - monarchmeshes: Full access to reconcile the custom resource
+// - monarchmeshes/status: Update status subresource with replica counts and conditions
+// - monarchmeshes/finalizers: Update finalizers for cleanup logic
+// - statefulsets: Manage StatefulSets that run Monarch worker pods
+// - services: Manage headless Services for pod discovery via DNS
 
 // +kubebuilder:rbac:groups=pytorch.monarch.io,resources=monarchmeshes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pytorch.monarch.io,resources=monarchmeshes/status,verbs=get;update;patch
@@ -61,29 +69,36 @@ type MonarchMeshReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the MonarchMesh object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
+// Reconcile ensures the cluster state matches the desired state specified in the MonarchMesh resource.
+// It creates/updates a headless Service for DNS-based pod discovery and a StatefulSet for running
+// Monarch worker pods with stable network identities.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.4/pkg/reconcile
 func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	// 1. Fetch the Mesh Object
+	// 1. Fetch the MonarchMesh object.
+	// If not found, the object was deleted - cleanup is handled automatically via OwnerReferences
+	// (Kubernetes garbage collection deletes owned StatefulSets and Services).
 	var mesh monarchv1.MonarchMesh
 	if err := r.Get(ctx, req.NamespacedName, &mesh); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// 2. Define Identifiers
-	labels := map[string]string{"monarch-mesh": mesh.Name, "app": "monarch-worker"}
-	svcName := mesh.Name + "-svc"
+	// 2. Define identifiers and labels for owned resources.
+	labels := map[string]string{r.Config.LabelKey: mesh.Name, "app": r.Config.AppLabelValue}
+	svcName := mesh.Name + r.Config.ServiceSuffix
 
-	// 3. Ensure Headless Service using CreateOrUpdate
+	// Determine the port to use (default from config if not specified in CRD)
+	port := mesh.Spec.Port
+	if port == 0 {
+		port = r.Config.DefaultPort
+	}
+
+	// 3. Ensure headless Service exists for DNS-based pod discovery.
+	// The headless Service (ClusterIP: None) provides DNS entries like:
+	// <pod-name>.<service-name>.<namespace>.svc.cluster.local
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: svcName, Namespace: mesh.Namespace},
 	}
@@ -91,25 +106,29 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		svc.Labels = labels
 		svc.Spec.ClusterIP = "None"
 		svc.Spec.Selector = labels
-		svc.Spec.Ports = []corev1.ServicePort{{Name: "monarch", Port: 26600}}
+		svc.Spec.Ports = []corev1.ServicePort{{Name: r.Config.PortName, Port: port}}
 		return ctrl.SetControllerReference(&mesh, svc, r.Scheme)
 	})
 	if err != nil {
 		log.Error(err, "Failed to create or update Service")
+		// Returning error automatically triggers requeue with exponential backoff
 		return ctrl.Result{}, err
 	}
 
-	// 4. Ensure StatefulSet using CreateOrUpdate
+	// 4. Ensure StatefulSet exists for running Monarch worker pods.
+	// We use StatefulSet (not Deployment) because:
+	// - Pods get stable, predictable names (mesh-0, mesh-1, etc.)
+	// - Pods maintain identity across restarts
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: mesh.Name, Namespace: mesh.Namespace},
 	}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ss, func() error {
 		ss.Labels = labels
-		ss.Spec.Replicas = mesh.Spec.Replicas
+		ss.Spec.Replicas = &mesh.Spec.Replicas
 		ss.Spec.ServiceName = svcName
 		ss.Spec.Selector = &metav1.LabelSelector{MatchLabels: labels}
 		ss.Spec.Template.ObjectMeta.Labels = labels
-		ss.Spec.Template.Spec = mesh.Spec.Template.Spec
+		ss.Spec.Template.Spec = mesh.Spec.PodTemplate
 		return ctrl.SetControllerReference(&mesh, ss, r.Scheme)
 	})
 	if err != nil {
@@ -117,13 +136,14 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// 5. Update Status
+	// 5. Update MonarchMesh status with observed state from StatefulSet.
+	// Status updates are triggered automatically when owned StatefulSet changes (via Owns()).
 	mesh.Status.Replicas = ss.Status.Replicas
 	mesh.Status.ReadyReplicas = ss.Status.ReadyReplicas
 	mesh.Status.ServiceName = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, mesh.Namespace)
 
 	condition := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: "Waiting"}
-	if mesh.Spec.Replicas != nil && ss.Status.ReadyReplicas == *mesh.Spec.Replicas {
+	if ss.Status.ReadyReplicas == mesh.Spec.Replicas {
 		condition = metav1.Condition{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllReady"}
 	}
 	meta.SetStatusCondition(&mesh.Status.Conditions, condition)
@@ -140,7 +160,8 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 func (r *MonarchMeshReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&monarchv1.MonarchMesh{}).
-		// Reconcile on changes to the StatefulSet.
+		// Watch owned StatefulSets - when they change (e.g., pods become ready),
+		// the controller is notified and can update MonarchMesh status.
 		Owns(&appsv1.StatefulSet{}).
 		Complete(r)
 }
