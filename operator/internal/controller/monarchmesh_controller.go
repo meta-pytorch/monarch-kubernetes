@@ -127,6 +127,10 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		ss.Spec.Replicas = &mesh.Spec.Replicas
 		ss.Spec.ServiceName = svcName
 		ss.Spec.Selector = &metav1.LabelSelector{MatchLabels: labels}
+		// Use Parallel pod management to launch all pods simultaneously rather than sequentially.
+		// This can speed up large worker pod launches.
+		// See: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#parallel-pod-management
+		ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
 		ss.Spec.Template.ObjectMeta.Labels = labels
 		ss.Spec.Template.Spec = mesh.Spec.PodTemplate
 		return ctrl.SetControllerReference(&mesh, ss, r.Scheme)
