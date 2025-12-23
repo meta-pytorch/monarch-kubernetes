@@ -8,4 +8,14 @@ layout:
 - go.kubebuilder.io/v4
 projectName: operator
 repo: github.com/meta-pytorch/monarch-kubernetes
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: pytorch.org
+  group: monarch
+  kind: MonarchMesh
+  path: github.com/meta-pytorch/monarch-kubernetes/api/v1
+  version: v1
 version: "3"
