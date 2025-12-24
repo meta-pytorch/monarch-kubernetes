@@ -46,7 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	monarchv1 "github.com/meta-pytorch/monarch-kubernetes/api/v1"
+	monarchv1alpha1 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha1"
 )
 
 // MonarchMeshReconciler reconciles a MonarchMesh object
@@ -81,7 +81,7 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// 1. Fetch the MonarchMesh object.
 	// If not found, the object was deleted - cleanup is handled automatically via OwnerReferences
 	// (Kubernetes garbage collection deletes owned StatefulSets and Services).
-	var mesh monarchv1.MonarchMesh
+	var mesh monarchv1alpha1.MonarchMesh
 	if err := r.Get(ctx, req.NamespacedName, &mesh); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -163,9 +163,13 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // SetupWithManager sets up the controller with the Manager.
 func (r *MonarchMeshReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&monarchv1.MonarchMesh{}).
-		// Watch owned StatefulSets - when they change (e.g., pods become ready),
-		// the controller is notified and can update MonarchMesh status.
+		For(&monarchv1alpha1.MonarchMesh{}).
+		// Owns() watches StatefulSets that have an OwnerReference pointing to a MonarchMesh.
+		// When a StatefulSet changes (e.g., pod becomes ready, status updates), controller-runtime
+		// automatically looks up the OwnerReference and enqueues a reconcile for the parent MonarchMesh.
+		// This triggers Reconcile(), which reads the latest StatefulSet status and copies it to
+		// MonarchMesh.Status (Replicas, ReadyReplicas, Conditions).
+		// See: https://book.kubebuilder.io/reference/watching-resources/owned
 		Owns(&appsv1.StatefulSet{}).
 		Complete(r)
 }
