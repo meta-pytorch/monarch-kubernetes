@@ -4,6 +4,7 @@ Native Kubernetes support for [Monarch](https://github.com/meta-pytorch/monarch)
 
 # Directory structure
 operator/ - Contains the operator code that can apply the CRD to a cluster
+
 images/ - Contains the Dockerfile for building the monarch worker image
 
 # How to build
