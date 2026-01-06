@@ -35,11 +35,16 @@ package controller
 // Config holds configuration for the MonarchMesh controller.
 // These values can be overridden via controller flags in a future iteration.
 type Config struct {
-	// LabelKey is the label key used to identify MonarchMesh-owned resources.
+	// MeshLabelKey is the FQDN label key used to identify MonarchMesh-owned resources.
 	// The value of this label will be set to the MonarchMesh name.
-	LabelKey string
+	// Uses FQDN convention to avoid collisions per:
+	// https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
+	MeshLabelKey string
 
-	// AppLabelValue is the value for the "app" label on pods.
+	// AppLabelKey is the standard Kubernetes label key for application name.
+	AppLabelKey string
+
+	// AppLabelValue is the value for the app label on pods.
 	// This is used for pod selection and identification.
 	AppLabelValue string
 
@@ -58,7 +63,8 @@ type Config struct {
 // These defaults are suitable for most Monarch deployments.
 func DefaultConfig() Config {
 	return Config{
-		LabelKey:      "monarch-mesh",
+		MeshLabelKey:  "mesh.monarch.pytorch.org/name",
+		AppLabelKey:   "app.kubernetes.io/name",
 		AppLabelValue: "monarch-worker",
 		DefaultPort:   26600,
 		ServiceSuffix: "-svc",

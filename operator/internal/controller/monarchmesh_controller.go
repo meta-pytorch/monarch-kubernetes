@@ -103,7 +103,12 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// 2. Define identifiers and labels for owned resources.
-	labels := map[string]string{r.Config.LabelKey: mesh.Name, "app": r.Config.AppLabelValue}
+	// Uses FQDN label convention to avoid collisions per:
+	// https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
+	labels := map[string]string{
+		r.Config.MeshLabelKey: mesh.Name,
+		r.Config.AppLabelKey:  r.Config.AppLabelValue,
+	}
 	svcName := mesh.Name + r.Config.ServiceSuffix
 
 	// Determine the port to use (default from config if not specified in CRD)

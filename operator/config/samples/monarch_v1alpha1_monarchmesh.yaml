@@ -2,7 +2,7 @@ apiVersion: monarch.pytorch.org/v1alpha1
 kind: MonarchMesh
 metadata:
   labels:
-    app.kubernetes.io/name: operator
+    app.kubernetes.io/name: monarchmesh-sample
     app.kubernetes.io/managed-by: kustomize
   name: monarchmesh-sample
   namespace: monarch-workspace
@@ -13,8 +13,6 @@ spec:
     containers:
     - name: worker
       image: ghcr.io/meta-pytorch/monarch:2025-12-16-alpha
-      # Use IfNotPresent for efficiency. Only use Always during development with
-      # mutable tags like :latest when you need to force re-pulling.
       imagePullPolicy: IfNotPresent
       # TODO: Once we have port name based discovery, we can remove passing in the env var.
       ports:
