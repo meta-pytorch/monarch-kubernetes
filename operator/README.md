@@ -118,4 +118,6 @@ is manually re-applied afterwards.
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
+This repo is BSD-3 licensed, as found in the LICENSE file.
+
 
