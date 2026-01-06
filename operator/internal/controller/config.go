@@ -63,7 +63,7 @@ type Config struct {
 // These defaults are suitable for most Monarch deployments.
 func DefaultConfig() Config {
 	return Config{
-		MeshLabelKey:  "mesh.monarch.pytorch.org/name",
+		MeshLabelKey:  " monarch.pytorch.org/mesh-name",
 		AppLabelKey:   "app.kubernetes.io/name",
 		AppLabelValue: "monarch-worker",
 		DefaultPort:   26600,

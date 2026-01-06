@@ -1,8 +1,2 @@
 resources:
 - manager.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-images:
-- name: controller
-  newName: 383172230265.dkr.ecr.us-east-1.amazonaws.com/monarch-k8s
-  newTag: ahmad-test1

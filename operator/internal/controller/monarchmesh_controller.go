@@ -79,9 +79,9 @@ type MonarchMeshReconciler struct {
 //   The controller creates a headless Service for each MonarchMesh. The headless Service
 //   enables DNS-based pod discovery (e.g., mesh-0.mesh-svc.namespace.svc.cluster.local).
 
-// +kubebuilder:rbac:groups=pytorch.monarch.io,resources=monarchmeshes,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=pytorch.monarch.io,resources=monarchmeshes/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=pytorch.monarch.io,resources=monarchmeshes/finalizers,verbs=update
+// +kubebuilder:rbac:groups=monarch.pytorch.org,resources=monarchmeshes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monarch.pytorch.org,resources=monarchmeshes/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=monarch.pytorch.org,resources=monarchmeshes/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 

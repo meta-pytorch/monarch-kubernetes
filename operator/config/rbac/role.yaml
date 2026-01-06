@@ -29,7 +29,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - pytorch.monarch.io
+  - monarch.pytorch.org
   resources:
   - monarchmeshes
   verbs:
@@ -41,13 +41,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - pytorch.monarch.io
+  - monarch.pytorch.org
   resources:
   - monarchmeshes/finalizers
   verbs:
   - update
 - apiGroups:
-  - pytorch.monarch.io
+  - monarch.pytorch.org
   resources:
   - monarchmeshes/status
   verbs:
