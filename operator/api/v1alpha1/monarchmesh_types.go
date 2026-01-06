@@ -64,12 +64,6 @@ type MonarchMeshStatus struct {
 	// +optional
 	ReadyReplicas int32 `json:"readyReplicas"`
 
-	// ServiceName is the fully qualified domain name (FQDN) of the headless service
-	// that provides DNS entries for pod discovery (e.g., "mymesh-svc.namespace.svc.cluster.local").
-	// Clients can use this to discover and connect to Monarch workers.
-	// +optional
-	ServiceName string `json:"serviceName,omitempty"`
-
 	// Conditions represent the current state of the MonarchMesh resource.
 	// +listType=map
 	// +listMapKey=type

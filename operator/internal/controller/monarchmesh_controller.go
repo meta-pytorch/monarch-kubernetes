@@ -165,7 +165,6 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Status updates are triggered automatically when owned StatefulSet changes (via Owns()).
 	mesh.Status.Replicas = ss.Status.Replicas
 	mesh.Status.ReadyReplicas = ss.Status.ReadyReplicas
-	mesh.Status.ServiceName = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, mesh.Namespace)
 
 	condition := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: "Waiting"}
 	if ss.Status.ReadyReplicas == mesh.Spec.Replicas {
