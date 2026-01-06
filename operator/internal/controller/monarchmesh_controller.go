@@ -63,8 +63,8 @@ type MonarchMeshReconciler struct {
 //   spec to determine desired state and writes back to update observed state.
 //
 // monarchmeshes/status (get;update;patch):
-//   Required to update the status subresource with replica counts (Replicas, ReadyReplicas),
-//   ServiceName (FQDN for pod discovery), and Conditions (Ready status).
+//   Required to update the status subresource with replica counts (Replicas, ReadyReplicas)
+//   and Conditions (Ready status).
 //
 // monarchmeshes/finalizers (update):
 //   Reserved for future cleanup logic. Finalizers allow the controller to perform
