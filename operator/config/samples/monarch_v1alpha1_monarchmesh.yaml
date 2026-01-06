@@ -13,7 +13,9 @@ spec:
     containers:
     - name: worker
       image: ghcr.io/meta-pytorch/monarch:2025-12-16-alpha
-      imagePullPolicy: Always
+      # Use IfNotPresent for efficiency. Only use Always during development with
+      # mutable tags like :latest when you need to force re-pulling.
+      imagePullPolicy: IfNotPresent
       ports:
       - name: monarch
         containerPort: 26600

@@ -56,12 +56,28 @@ type MonarchMeshReconciler struct {
 	Config Config
 }
 
-// RBAC permissions for the controller:
-// - monarchmeshes: Full access to reconcile the custom resource
-// - monarchmeshes/status: Update status subresource with replica counts and conditions
-// - monarchmeshes/finalizers: Update finalizers for cleanup logic
-// - statefulsets: Manage StatefulSets that run Monarch worker pods
-// - services: Manage headless Services for pod discovery via DNS
+// RBAC permissions for the controller.
+// Each resource access is documented with its purpose:
+//
+// monarchmeshes (get;list;watch;create;update;patch;delete):
+//   Required for full reconciliation of the custom resource. The controller reads the
+//   spec to determine desired state and writes back to update observed state.
+//
+// monarchmeshes/status (get;update;patch):
+//   Required to update the status subresource with replica counts (Replicas, ReadyReplicas),
+//   ServiceName (FQDN for pod discovery), and Conditions (Ready status).
+//
+// monarchmeshes/finalizers (update):
+//   Reserved for future cleanup logic. Finalizers allow the controller to perform
+//   cleanup before the resource is garbage collected.
+//
+// statefulsets (get;list;watch;create;update;patch;delete):
+//   The controller creates and manages a StatefulSet for each MonarchMesh. StatefulSets
+//   provide stable pod identities (mesh-0, mesh-1, etc.) and ordered/parallel pod management.
+//
+// services (get;list;watch;create;update;patch;delete):
+//   The controller creates a headless Service for each MonarchMesh. The headless Service
+//   enables DNS-based pod discovery (e.g., mesh-0.mesh-svc.namespace.svc.cluster.local).
 
 // +kubebuilder:rbac:groups=pytorch.monarch.io,resources=monarchmeshes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pytorch.monarch.io,resources=monarchmeshes/status,verbs=get;update;patch
