@@ -16,6 +16,7 @@ spec:
       # Use IfNotPresent for efficiency. Only use Always during development with
       # mutable tags like :latest when you need to force re-pulling.
       imagePullPolicy: IfNotPresent
+      # TODO: Once we have port name based discovery, we can remove passing in the env var.
       ports:
       - name: monarch
         containerPort: 26600
