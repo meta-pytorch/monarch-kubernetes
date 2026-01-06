@@ -8496,12 +8496,6 @@ spec:
                   MonarchMesh.
                 format: int32
                 type: integer
-              serviceName:
-                description: |-
-                  ServiceName is the fully qualified domain name (FQDN) of the headless service
-                  that provides DNS entries for pod discovery (e.g., "mymesh-svc.namespace.svc.cluster.local").
-                  Clients can use this to discover and connect to Monarch workers.
-                type: string
             type: object
         required:
         - spec
