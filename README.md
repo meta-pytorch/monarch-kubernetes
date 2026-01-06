@@ -10,10 +10,10 @@ images/ - Contains the Dockerfile for building the monarch worker image
 
 
 ```
-IMG=<your image here>
 make generate
 make manifests
-make docker-build IMG=$IMG CONTAINER_TOOL=podman
+# By default IMG=controller:latest so change that if you want to apply a different tag.
+make docker-build CONTAINER_TOOL=podman
 ```
 
 # License
