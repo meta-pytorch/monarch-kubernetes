@@ -115,9 +115,16 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+# Additional arguments for docker/podman build (e.g., --network=host for proxy support)
+# Proxy settings are passed from environment variables if set
+DOCKER_BUILD_ARGS ?= --network=host \
+	$(if $(HTTP_PROXY),--build-arg HTTP_PROXY=$(HTTP_PROXY)) \
+	$(if $(HTTPS_PROXY),--build-arg HTTPS_PROXY=$(HTTPS_PROXY)) \
+	$(if $(NO_PROXY),--build-arg NO_PROXY=$(NO_PROXY))
+
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build $(DOCKER_BUILD_ARGS) -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.

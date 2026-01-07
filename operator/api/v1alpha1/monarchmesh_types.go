@@ -30,52 +30,51 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-package v1
+package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // MonarchMeshSpec defines the desired state of MonarchMesh
 type MonarchMeshSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// Replicas is the number of Monarch worker pods to run.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Required
+	Replicas int32 `json:"replicas"`
 
-	// foo is an example field of MonarchMesh. Edit monarchmesh_types.go to remove/update
+	// Port is the port that Monarch workers listen on for mesh communication.
+	// +kubebuilder:default=26600
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Port int32 `json:"port,omitempty"`
+
+	// PodTemplate defines the pod specification for Monarch workers.
+	// Labels and annotations are inherited from the MonarchMesh metadata.
+	PodTemplate corev1.PodSpec `json:"podTemplate"`
 }
 
 // MonarchMeshStatus defines the observed state of MonarchMesh.
 type MonarchMeshStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Replicas is the total number of pods targeted by this MonarchMesh.
+	// +optional
+	Replicas int32 `json:"replicas"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// ReadyReplicas is the number of pods that are ready and running.
+	// +optional
+	ReadyReplicas int32 `json:"readyReplicas"`
 
-	// conditions represent the current state of the MonarchMesh resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// Conditions represent the current state of the MonarchMesh resource.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:storageversion
+// +kubebuilder:resource:path=monarchmeshes,scope=Namespaced
 
 // MonarchMesh is the Schema for the monarchmeshes API
 type MonarchMesh struct {

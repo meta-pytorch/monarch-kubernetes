@@ -30,10 +30,11 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-// Package v1 contains API Schema definitions for the monarch v1 API group.
+// Package v1alpha1 contains API Schema definitions for the monarch v1alpha1 API group.
+// This is an alpha version API, which means it may change in backwards-incompatible ways.
 // +kubebuilder:object:generate=true
 // +groupName=monarch.pytorch.org
-package v1
+package v1alpha1
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -42,7 +43,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "monarch.pytorch.org", Version: "v1"}
+	GroupVersion = schema.GroupVersion{Group: "monarch.pytorch.org", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
