@@ -119,5 +119,3 @@ More information can be found via the [Kubebuilder Documentation](https://book.k
 
 ## License
 This repo is BSD-3 licensed, as found in the LICENSE file.
-
-

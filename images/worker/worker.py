@@ -4,14 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import os
 import socket
-import logging
+
 from monarch.actor import run_worker_loop_forever
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("monarch-worker")
+
 
 def main():
     # 1. Get configuration from Environment Variables (set by K8s)
@@ -29,10 +31,8 @@ def main():
     logger.info(f"Listening on: {address}")
 
     # 4. Run the loop
-    run_worker_loop_forever(
-        address=address,
-        ca="trust_all_connections"
-    )
+    run_worker_loop_forever(address=address, ca="trust_all_connections")
+
 
 if __name__ == "__main__":
     main()
