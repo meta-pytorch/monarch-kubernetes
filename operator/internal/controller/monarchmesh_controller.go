@@ -43,7 +43,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	monarchv1alpha1 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha1"
 )
@@ -91,7 +91,7 @@ type MonarchMeshReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.4/pkg/reconcile
 func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	// 1. Fetch the MonarchMesh object.
 	// If not found, the object was deleted - cleanup is handled automatically via OwnerReferences
@@ -151,7 +151,7 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// This can speed up large worker pod launches.
 		// See: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#parallel-pod-management
 		ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
-		ss.Spec.Template.ObjectMeta.Labels = labels
+		ss.Spec.Template.Labels = labels
 		ss.Spec.Template.Spec = mesh.Spec.PodTemplate
 		return ctrl.SetControllerReference(&mesh, ss, r.Scheme)
 	})
