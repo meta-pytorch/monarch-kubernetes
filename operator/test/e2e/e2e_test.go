@@ -41,6 +41,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -284,15 +285,99 @@ var _ = Describe("Manager", Ordered, func() {
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput, err := getMetricsOutput()
-		// Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+		It("should reconcile a MonarchMesh CRD successfully", func() {
+			const testNamespace = "monarch-e2e-test"
+			const meshName = "test-mesh"
+
+			By("creating a test namespace for the MonarchMesh")
+			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
+
+			DeferCleanup(func() {
+				By("cleaning up the test namespace")
+				cmd := exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("applying the MonarchMesh CRD")
+			monarchMeshYAML := fmt.Sprintf(`
+apiVersion: monarch.pytorch.org/v1alpha1
+kind: MonarchMesh
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  replicas: 2
+  port: 26600
+  podTemplate:
+    containers:
+    - name: worker
+      image: busybox:latest
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      ports:
+      - name: monarch
+        containerPort: 26600
+`, meshName, testNamespace)
+
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(monarchMeshYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply MonarchMesh CRD")
+
+			By("verifying the MonarchMesh status is updated")
+			verifyMeshStatus := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "monarchmesh", meshName,
+					"-n", testNamespace,
+					"-o", "jsonpath={.status.replicas}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("2"), "Expected replicas to be 2")
+			}
+			Eventually(verifyMeshStatus, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying pods are created for the MonarchMesh")
+			verifyPodsCreated := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pods",
+					"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+					"-n", testNamespace,
+					"-o", "jsonpath={.items[*].metadata.name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				podNames := utils.GetNonEmptyLines(strings.ReplaceAll(output, " ", "\n"))
+				g.Expect(len(podNames)).To(Equal(2), "Expected 2 pods to be created")
+			}
+			Eventually(verifyPodsCreated, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying readyReplicas is updated when pods become ready")
+			verifyReadyReplicas := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "monarchmesh", meshName,
+					"-n", testNamespace,
+					"-o", "jsonpath={.status.readyReplicas}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("2"), "Expected readyReplicas to be 2")
+			}
+			Eventually(verifyReadyReplicas, 3*time.Minute, time.Second).Should(Succeed())
+
+			By("deleting the MonarchMesh CRD")
+			cmd = exec.Command("kubectl", "delete", "monarchmesh", meshName, "-n", testNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to delete MonarchMesh CRD")
+
+			By("verifying pods are cleaned up")
+			verifyPodsDeleted := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pods",
+					"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+					"-n", testNamespace,
+					"-o", "jsonpath={.items[*].metadata.name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(BeEmpty(), "Expected pods to be deleted")
+			}
+			Eventually(verifyPodsDeleted, 2*time.Minute, time.Second).Should(Succeed())
+		})
 	})
 })
 
