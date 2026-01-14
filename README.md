@@ -40,6 +40,8 @@ make deploy
 cd operator
 # Test controller
 make test
+# Test e2e with setting up local cluster
+make test-e2e
 ```
 
 # Examples
