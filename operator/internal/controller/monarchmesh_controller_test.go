@@ -43,7 +43,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	monarchv1 "github.com/meta-pytorch/monarch-kubernetes/api/v1"
+	monarchv1alpha1 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha1"
 )
 
 var _ = Describe("MonarchMesh Controller", func() {
@@ -56,13 +56,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		monarchmesh := &monarchv1.MonarchMesh{}
+		monarchmesh := &monarchv1alpha1.MonarchMesh{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind MonarchMesh")
 			err := k8sClient.Get(ctx, typeNamespacedName, monarchmesh)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &monarchv1.MonarchMesh{
+				resource := &monarchv1alpha1.MonarchMesh{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
@@ -75,7 +75,7 @@ var _ = Describe("MonarchMesh Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &monarchv1.MonarchMesh{}
+			resource := &monarchv1alpha1.MonarchMesh{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
