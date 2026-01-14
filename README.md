@@ -35,6 +35,13 @@ make run
 make deploy
 ```
 
+# How to test
+```
+cd operator
+# Test controller
+make test
+```
+
 # Examples
 Check out [hello_kubernetes_job.py](https://github.com/meta-pytorch/monarch/blob/main/examples/kubernetes/hello_kubernetes_job.py) for an example of how to use the KubernetesJob class.
 
