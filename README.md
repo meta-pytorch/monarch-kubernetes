@@ -5,6 +5,13 @@ Contains a reference CRD and operator for [Monarch](https://github.com/meta-pyto
 This can be used to deploy Monarch workers to a Kubernetes cluster. The operator applies the CRD
 to the cluster and applies labels so the controller can discover them.
 
+> ⚠️ **Early Development Warning** monarch-kubernetes is currently in an experimental
+> stage. You should expect bugs, incomplete features, and APIs that may change
+> in future versions. The project welcomes bugfixes, but to make sure things are
+> well coordinated you should discuss any significant change before starting the
+> work. It's recommended that you signal your intention to contribute in the
+> issue tracker, either by filing a new issue or by claiming an existing one.
+
 # Current status
 
 We have a CRD and an operator. This can be used to provision workers on the kubernetes cluster.
