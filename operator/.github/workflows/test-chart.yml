@@ -67,8 +67,8 @@ jobs:
 
       - name: Install Helm chart for project
         run: |
-          helm install my-release ./dist/chart --create-namespace --namespace operator-system
+          helm install monarch ./dist/chart --create-namespace --namespace monarch-system
 
       - name: Check Helm release status
         run: |
-          helm status my-release --namespace operator-system
+          helm status monarch --namespace monarch-system
