@@ -25,4 +25,3 @@ resources:
 - monarchmesh_admin_role.yaml
 - monarchmesh_editor_role.yaml
 - monarchmesh_viewer_role.yaml
-
