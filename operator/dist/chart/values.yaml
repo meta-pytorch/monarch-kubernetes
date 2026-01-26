@@ -53,6 +53,15 @@ manager:
 rbacHelpers:
   enable: false  # Install convenience admin/editor/viewer roles for CRDs
 
+# Client RBAC ClusterRole for Monarch client pods.
+# Creates a ClusterRole granting read-only access to pods, services, and MonarchMesh resources.
+# MonarchJob (from the monarch Python package) requires these permissions to discover worker pods.
+#
+# NOTE: This ClusterRole grants no permissions by itself. Users must create a ServiceAccount
+# and RoleBinding in their namespace. See NOTES.txt after installation.
+clientRbac:
+  enable: true  # Install the monarch-client-role ClusterRole
+
 # Custom Resource Definitions
 crd:
   enable: true  # Install CRDs with the chart

@@ -1,0 +1,63 @@
+{{- if .Values.clientRbac.enable }}
+# ClusterRole for Monarch client pods.
+# Grants read-only access to pods, services, and MonarchMesh resources.
+#
+# MonarchJob (from the monarch Python package) requires these permissions
+# to discover worker pod endpoints. Bind this role to the ServiceAccount
+# running your MonarchJob pod.
+#
+# Example:
+#   apiVersion: v1
+#   kind: ServiceAccount
+#   metadata:
+#     name: monarch-client
+#     namespace: my-namespace
+#   ---
+#   apiVersion: rbac.authorization.k8s.io/v1
+#   kind: RoleBinding
+#   metadata:
+#     name: monarch-client-binding
+#     namespace: my-namespace
+#   roleRef:
+#     apiGroup: rbac.authorization.k8s.io
+#     kind: ClusterRole
+#     name: monarch-client-role
+#   subjects:
+#     - kind: ServiceAccount
+#       name: monarch-client
+#       namespace: my-namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    labels:
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/name: monarch-operator
+        app.kubernetes.io/component: client
+    name: monarch-client-role
+rules:
+    - apiGroups:
+        - ""
+      resources:
+        - pods
+      verbs:
+        - get
+        - list
+        - watch
+    - apiGroups:
+        - ""
+      resources:
+        - services
+      verbs:
+        - get
+        - list
+        - watch
+    - apiGroups:
+        - monarch.pytorch.org
+      resources:
+        - monarchmeshes
+        - monarchmeshes/status
+      verbs:
+        - get
+        - list
+        - watch
+{{- end }}
