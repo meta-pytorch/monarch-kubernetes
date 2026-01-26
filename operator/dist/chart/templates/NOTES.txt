@@ -1,0 +1,44 @@
+Monarch Operator has been installed successfully!
+
+{{- if .Values.clientRbac.enable }}
+
+================================================================================
+MONARCH CLIENT RBAC
+================================================================================
+
+ClusterRole "monarch-client-role" has been created. MonarchJob (from the monarch
+Python package) requires this role to discover worker pod endpoints.
+
+To grant these permissions, create a ServiceAccount and RoleBinding in your
+workload namespace:
+
+  cat <<EOF | kubectl apply -f -
+  apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: monarch-client
+    namespace: <YOUR_NAMESPACE>
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    name: monarch-client-binding
+    namespace: <YOUR_NAMESPACE>
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: monarch-client-role
+  subjects:
+    - kind: ServiceAccount
+      name: monarch-client
+      namespace: <YOUR_NAMESPACE>
+  EOF
+
+Then set serviceAccountName in your pod spec:
+
+  spec:
+    serviceAccountName: monarch-client
+
+{{- end }}
+
+For more information, visit: https://github.com/pytorch/monarch-kubernetes and https://github.com/pytorch/monarch.
