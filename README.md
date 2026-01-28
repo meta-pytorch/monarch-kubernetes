@@ -1,9 +1,6 @@
 # monarch-kubernetes
 
-Contains a reference CRD and operator for [Monarch](https://github.com/meta-pytorch/monarch) workers.
-
-This can be used to deploy Monarch workers to a Kubernetes cluster. The operator applies the CRD
-to the cluster and applies labels so the controller can discover them.
+`monarch-kubernetes` provides a Kubernetes Custom Resource Definition (CRD) and operator for MonarchMesh, simplifying the deployment and management of [Monarch](https://github.com/meta-pytorch/monarch) workloads on Kubernetes. The operator reconciles MonarchMesh resources and provisions Monarch workers compatible with [KubernetesJob](https://meta-pytorch.org/monarch/api/monarch.job.html#kubernetesjob).
 
 > ⚠️ **Early Development Warning** monarch-kubernetes is currently in an experimental
 > stage. You should expect bugs, incomplete features, and APIs that may change
@@ -11,49 +8,85 @@ to the cluster and applies labels so the controller can discover them.
 > well coordinated you should discuss any significant change before starting the
 > work. It's recommended that you signal your intention to contribute in the
 > issue tracker, either by filing a new issue or by claiming an existing one.
+## Directory Structure
 
-# Current status
+| Directory   | Description                                           |
+|-------------|-------------------------------------------------------|
+| `operator/` | Operator source code for reconciling the CRD         |
+| `docs/`     | Helm Chart package and documentation index           |
 
-We have a CRD and an operator. This can be used to provision workers on the kubernetes cluster.
-[KubernetesJob](https://github.com/meta-pytorch/monarch/blob/main/python/monarch/_src/job/kubernetes.py)
-can then be used to connect and create a proc mesh on the workers.
+## Installation
 
-# Directory structure
-operator/ - Contains the operator code that can apply the CRD to a cluster
+### Helm Chart (Recommended)
 
-# How to build
+Install the MonarchMesh CRD and operator using Helm:
+
+```bash
+# Add the Helm repository
+helm repo add monarch-operator https://meta-pytorch.github.io/monarch-kubernetes
+
+# Update repository cache
+helm repo update
+
+# Install MonarchMesh CRD and operator
+helm install monarch-operator monarch-operator/monarch-operator \
+  --namespace monarch-system \
+  --create-namespace
 ```
+
+To uninstall:
+
+```bash
+helm uninstall monarch-operator --namespace monarch-system
+```
+
+### Manual Installation
+
+#### Build
+
+```bash
 cd operator
+
+# Generate code and manifests
 make generate
 make manifests
-# By default IMG=controller:latest so change that if you want to apply a different tag.
+
+# Build the container image (default: IMG=controller:latest)
 make docker-build CONTAINER_TOOL=podman
 ```
 
-# How to run
-```
+#### Deploy
+
+```bash
 cd operator
-# Run controller locally
+
+# Option 1: Run the controller locally
 make run
-# By default IMG=controller:latest so change that if you want to apply a different tag.
-# Or, deploy controller to cluster
+
+# Option 2: Deploy to the cluster (default: IMG=controller:latest)
 make deploy
 ```
 
-# How to test
-```
+## Usage
+
+For a complete example demonstrating how to use the KubernetesJob class with Monarch, see the [hello_kubernetes_job](https://github.com/meta-pytorch/monarch/tree/main/examples/kubernetes/hello_kubernetes_job) example.
+
+## Testing
+
+```bash
 cd operator
-# Test controller
+
+# Run unit tests
 make test
-# Test e2e with setting up local cluster
+
+# Run end-to-end tests (sets up a local cluster)
 make test-e2e
 ```
 
-# Examples
-Check out [hello_kubernetes_job](https://github.com/meta-pytorch/monarch/tree/main/examples/kubernetes/hello_kubernetes_job) for an example of how to use the KubernetesJob class.
+## Troubleshooting
 
-# Common issues
-1. Ensure you have same version of Monarch installed on the workers as the controller. Monarch doesn't provide forward/backward compatibility for the controller/worker protocol.
+**Version Mismatch:** Ensure the Monarch version installed on workers matches the controller version. Monarch does not provide forward or backward compatibility for the controller/worker protocol.
 
-# License
-This repo is BSD-3 licensed, as found in the LICENSE file.
+## License
+
+This project is licensed under the BSD-3-Clause License. See the [LICENSE](LICENSE) file for details.
