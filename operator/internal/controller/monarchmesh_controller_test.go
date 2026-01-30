@@ -335,6 +335,73 @@ var _ = Describe("MonarchMesh Controller", func() {
 			Expect(k8sClient.Get(ctx, typeNamespacedName, ss)).To(Succeed())
 			Expect(*ss.Spec.Replicas).To(Equal(int32(5)))
 		})
+
+		It("should propagate labels from MonarchMesh to StatefulSet", func() {
+			By("Creating the MonarchMesh resource with custom labels")
+			mesh := &monarchv1alpha1.MonarchMesh{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+					Labels: map[string]string{
+						"kueue.x-k8s.io/queue-name": "default-queue",
+						"custom-label":              "custom-value",
+					},
+				},
+				Spec: monarchv1alpha1.MonarchMeshSpec{
+					Replicas: 2,
+					PodTemplate: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "worker",
+							Image: "monarch:latest",
+						}},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mesh)).To(Succeed())
+
+			By("Reconciling the resource")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying the StatefulSet has propagated labels")
+			ss := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, ss)).To(Succeed())
+
+			// Verify controller-managed labels are present on StatefulSet
+			Expect(ss.Labels).To(HaveKeyWithValue(config.MeshLabelKey, resourceName))
+			Expect(ss.Labels).To(HaveKeyWithValue(config.AppLabelKey, config.AppLabelValue))
+
+			// Verify custom labels from MonarchMesh are propagated to StatefulSet
+			Expect(ss.Labels).To(HaveKeyWithValue("kueue.x-k8s.io/queue-name", "default-queue"))
+			Expect(ss.Labels).To(HaveKeyWithValue("custom-label", "custom-value"))
+
+			// Verify pod template only has controller-managed labels (NOT propagated)
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue(config.MeshLabelKey, resourceName))
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue(config.AppLabelKey, config.AppLabelValue))
+			Expect(ss.Spec.Template.Labels).NotTo(HaveKey("kueue.x-k8s.io/queue-name"))
+			Expect(ss.Spec.Template.Labels).NotTo(HaveKey("custom-label"))
+
+			// Verify selector only contains controller-managed labels
+			Expect(ss.Spec.Selector.MatchLabels).To(HaveKeyWithValue(config.MeshLabelKey, resourceName))
+			Expect(ss.Spec.Selector.MatchLabels).To(HaveKeyWithValue(config.AppLabelKey, config.AppLabelValue))
+			Expect(ss.Spec.Selector.MatchLabels).NotTo(HaveKey("kueue.x-k8s.io/queue-name"))
+
+			By("Verifying the Service does NOT have propagated labels")
+			svc := &corev1.Service{}
+			svcName := types.NamespacedName{
+				Name:      resourceName + config.ServiceSuffix,
+				Namespace: "default",
+			}
+			Expect(k8sClient.Get(ctx, svcName, svc)).To(Succeed())
+
+			// Verify Service only has controller-managed labels
+			Expect(svc.Labels).To(HaveKeyWithValue(config.MeshLabelKey, resourceName))
+			Expect(svc.Labels).To(HaveKeyWithValue(config.AppLabelKey, config.AppLabelValue))
+			Expect(svc.Labels).NotTo(HaveKey("kueue.x-k8s.io/queue-name"))
+			Expect(svc.Labels).NotTo(HaveKey("custom-label"))
+		})
 	})
 
 	Context("When MonarchMesh is deleted", func() {
