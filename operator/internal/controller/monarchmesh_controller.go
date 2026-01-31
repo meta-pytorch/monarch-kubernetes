@@ -12,6 +12,7 @@ import (
 	"context"
 	"maps"
 
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -93,7 +94,7 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// labels merges user-provided labels from MonarchMesh with controller-managed labels.
 	// Controller-managed labels take precedence to ensure selectors work correctly.
 	// Only applied to StatefulSet metadata for Kueue integration.
-	labels := mergeLabels(mesh.Labels, selectorLabels)
+	labels := mergeLabels(mesh.Labels, selectorLabels, log)
 
 	svcName := mesh.Name + r.Config.ServiceSuffix
 
@@ -183,9 +184,16 @@ func (r *MonarchMeshReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // mergeLabels merges base labels with override labels.
 // Override labels take precedence when the same key exists in both maps.
 // Returns a new map without modifying the input maps.
-func mergeLabels(base, override map[string]string) map[string]string {
+func mergeLabels(base, override map[string]string, log logr.Logger) map[string]string {
 	result := make(map[string]string, len(base)+len(override))
 	maps.Copy(result, base)
-	maps.Copy(result, override)
+	// Warn when user-provided labels are being overridden by controller-managed labels.
+	for key, overrideValue := range override {
+		if baseValue, exists := base[key]; exists && baseValue != overrideValue {
+			log.Info("User-provided label overridden by controller-managed label",
+				"key", key, "userValue", baseValue, "controllerValue", overrideValue)
+		}
+		result[key] = overrideValue
+	}
 	return result
 }

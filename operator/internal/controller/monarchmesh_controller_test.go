@@ -345,6 +345,8 @@ var _ = Describe("MonarchMesh Controller", func() {
 					Labels: map[string]string{
 						"kueue.x-k8s.io/queue-name": "default-queue",
 						"custom-label":              "custom-value",
+						// This user-defined value will be overridden by the controller-managed label.
+						config.AppLabelKey: "custom-monarch-worker",
 					},
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
@@ -376,6 +378,8 @@ var _ = Describe("MonarchMesh Controller", func() {
 			// Verify custom labels from MonarchMesh are propagated to StatefulSet
 			Expect(ss.Labels).To(HaveKeyWithValue("kueue.x-k8s.io/queue-name", "default-queue"))
 			Expect(ss.Labels).To(HaveKeyWithValue("custom-label", "custom-value"))
+			// Also verify user-provided labels are overridden by controller-managed labels
+			Expect(ss.Labels).To(HaveKeyWithValue(config.AppLabelKey, config.AppLabelValue))
 
 			// Verify pod template only has controller-managed labels (NOT propagated)
 			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue(config.MeshLabelKey, resourceName))
