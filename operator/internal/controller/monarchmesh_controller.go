@@ -10,7 +10,9 @@ package controller
 
 import (
 	"context"
+	"maps"
 
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -80,10 +82,20 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// 2. Define identifiers and labels for owned resources.
 	// Uses FQDN label convention to avoid collisions per:
 	// https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-	labels := map[string]string{
+	//
+	// selectorLabels are the minimal labels required for Service selector and StatefulSet
+	// pod selector. These must remain stable and cannot include user-provided labels
+	// since StatefulSet selectors are immutable after creation.
+	selectorLabels := map[string]string{
 		r.Config.MeshLabelKey: mesh.Name,
 		r.Config.AppLabelKey:  r.Config.AppLabelValue,
 	}
+
+	// labels merges user-provided labels from MonarchMesh with controller-managed labels.
+	// Controller-managed labels take precedence to ensure selectors work correctly.
+	// Only applied to StatefulSet metadata for Kueue integration.
+	labels := mergeLabels(mesh.Labels, selectorLabels, log)
+
 	svcName := mesh.Name + r.Config.ServiceSuffix
 
 	// Determine the port to use (default from config if not specified in CRD)
@@ -99,9 +111,9 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		ObjectMeta: metav1.ObjectMeta{Name: svcName, Namespace: mesh.Namespace},
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.Labels = labels
+		svc.Labels = selectorLabels
 		svc.Spec.ClusterIP = "None"
-		svc.Spec.Selector = labels
+		svc.Spec.Selector = selectorLabels
 		svc.Spec.Ports = []corev1.ServicePort{{Name: r.Config.PortName, Port: port}}
 		return ctrl.SetControllerReference(&mesh, svc, r.Scheme)
 	})
@@ -122,12 +134,12 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		ss.Labels = labels
 		ss.Spec.Replicas = &mesh.Spec.Replicas
 		ss.Spec.ServiceName = svcName
-		ss.Spec.Selector = &metav1.LabelSelector{MatchLabels: labels}
+		ss.Spec.Selector = &metav1.LabelSelector{MatchLabels: selectorLabels}
 		// Use Parallel pod management to launch all pods simultaneously rather than sequentially.
 		// This can speed up large worker pod launches.
 		// See: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#parallel-pod-management
 		ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
-		ss.Spec.Template.Labels = labels
+		ss.Spec.Template.Labels = selectorLabels
 		ss.Spec.Template.Spec = mesh.Spec.PodTemplate
 		return ctrl.SetControllerReference(&mesh, ss, r.Scheme)
 	})
@@ -167,4 +179,21 @@ func (r *MonarchMeshReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// See: https://book.kubebuilder.io/reference/watching-resources/owned
 		Owns(&appsv1.StatefulSet{}).
 		Complete(r)
+}
+
+// mergeLabels merges base labels with override labels.
+// Override labels take precedence when the same key exists in both maps.
+// Returns a new map without modifying the input maps.
+func mergeLabels(base, override map[string]string, log logr.Logger) map[string]string {
+	result := make(map[string]string, len(base)+len(override))
+	maps.Copy(result, base)
+	// Warn when user-provided labels are being overridden by controller-managed labels.
+	for key, overrideValue := range override {
+		if baseValue, exists := base[key]; exists && baseValue != overrideValue {
+			log.Info("User-provided label overridden by controller-managed label",
+				"key", key, "userValue", baseValue, "controllerValue", overrideValue)
+		}
+		result[key] = overrideValue
+	}
+	return result
 }
