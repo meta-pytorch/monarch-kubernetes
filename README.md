@@ -15,6 +15,10 @@
 | `operator/` | Operator source code for reconciling the CRD         |
 | `docs/`     | Helm Chart package and documentation index           |
 
+## Compatibility
+
+- [Monarch](https://github.com/meta-pytorch/monarch) v0.3.0 or higher
+
 ## Installation
 
 ### Helm Chart (Recommended)

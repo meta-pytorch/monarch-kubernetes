@@ -8,8 +8,8 @@ apiVersion: v2
 name: monarch-operator
 description: A Helm chart for the Monarch Kubernetes CRD and Operator
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.1
+appVersion: "0.1.1"
 icon: "https://pytorch.org/assets/images/logo-icon.svg"
 home: "https://github.com/pytorch/monarch-kubernetes"
 sources:

@@ -10,7 +10,7 @@ manager:
 
   image:
     repository: ghcr.io/meta-pytorch/monarch-operator
-    tag: "0.1.0"
+    tag: "0.1.1"
     pullPolicy: IfNotPresent
 
   # Arguments
