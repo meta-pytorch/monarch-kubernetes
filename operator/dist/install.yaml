@@ -9,9 +9,9 @@ kind: Namespace
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
+    app.kubernetes.io/name: monarch-operator
     control-plane: controller-manager
-  name: operator-system
+  name: monarch-system
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -8524,18 +8524,18 @@ kind: ServiceAccount
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
-  name: operator-controller-manager
-  namespace: operator-system
+    app.kubernetes.io/name: monarch-operator
+  name: monarch-controller-manager
+  namespace: monarch-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
-  name: operator-leader-election-role
-  namespace: operator-system
+    app.kubernetes.io/name: monarch-operator
+  name: monarch-leader-election-role
+  namespace: monarch-system
 rules:
 - apiGroups:
   - ""
@@ -8572,7 +8572,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: operator-manager-role
+  name: monarch-manager-role
 rules:
 - apiGroups:
   - ""
@@ -8628,7 +8628,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: operator-metrics-auth-role
+  name: monarch-metrics-auth-role
 rules:
 - apiGroups:
   - authentication.k8s.io
@@ -8646,7 +8646,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: operator-metrics-reader
+  name: monarch-metrics-reader
 rules:
 - nonResourceURLs:
   - /metrics
@@ -8658,8 +8658,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
-  name: operator-monarchmesh-admin-role
+    app.kubernetes.io/name: monarch-operator
+  name: monarch-monarchmesh-admin-role
 rules:
 - apiGroups:
   - monarch.pytorch.org
@@ -8679,8 +8679,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
-  name: operator-monarchmesh-editor-role
+    app.kubernetes.io/name: monarch-operator
+  name: monarch-monarchmesh-editor-role
 rules:
 - apiGroups:
   - monarch.pytorch.org
@@ -8706,8 +8706,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
-  name: operator-monarchmesh-viewer-role
+    app.kubernetes.io/name: monarch-operator
+  name: monarch-monarchmesh-viewer-role
 rules:
 - apiGroups:
   - monarch.pytorch.org
@@ -8729,56 +8729,56 @@ kind: RoleBinding
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
-  name: operator-leader-election-rolebinding
-  namespace: operator-system
+    app.kubernetes.io/name: monarch-operator
+  name: monarch-leader-election-rolebinding
+  namespace: monarch-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: operator-leader-election-role
+  name: monarch-leader-election-role
 subjects:
 - kind: ServiceAccount
-  name: operator-controller-manager
-  namespace: operator-system
+  name: monarch-controller-manager
+  namespace: monarch-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
-  name: operator-manager-rolebinding
+    app.kubernetes.io/name: monarch-operator
+  name: monarch-manager-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: operator-manager-role
+  name: monarch-manager-role
 subjects:
 - kind: ServiceAccount
-  name: operator-controller-manager
-  namespace: operator-system
+  name: monarch-controller-manager
+  namespace: monarch-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: operator-metrics-auth-rolebinding
+  name: monarch-metrics-auth-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: operator-metrics-auth-role
+  name: monarch-metrics-auth-role
 subjects:
 - kind: ServiceAccount
-  name: operator-controller-manager
-  namespace: operator-system
+  name: monarch-controller-manager
+  namespace: monarch-system
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
+    app.kubernetes.io/name: monarch-operator
     control-plane: controller-manager
-  name: operator-controller-manager-metrics-service
-  namespace: operator-system
+  name: monarch-controller-manager-metrics-service
+  namespace: monarch-system
 spec:
   ports:
   - name: https
@@ -8786,7 +8786,7 @@ spec:
     protocol: TCP
     targetPort: 8443
   selector:
-    app.kubernetes.io/name: operator
+    app.kubernetes.io/name: monarch-operator
     control-plane: controller-manager
 ---
 apiVersion: apps/v1
@@ -8794,22 +8794,22 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: operator
+    app.kubernetes.io/name: monarch-operator
     control-plane: controller-manager
-  name: operator-controller-manager
-  namespace: operator-system
+  name: monarch-controller-manager
+  namespace: monarch-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: operator
+      app.kubernetes.io/name: monarch-operator
       control-plane: controller-manager
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        app.kubernetes.io/name: operator
+        app.kubernetes.io/name: monarch-operator
         control-plane: controller-manager
     spec:
       containers:
@@ -8819,7 +8819,7 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
-        image: controller:latest
+        image: ghcr.io/meta-pytorch/monarch-operator:latest
         livenessProbe:
           httpGet:
             path: /healthz
@@ -8852,6 +8852,6 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: operator-controller-manager
+      serviceAccountName: monarch-controller-manager
       terminationGracePeriodSeconds: 10
       volumes: []
