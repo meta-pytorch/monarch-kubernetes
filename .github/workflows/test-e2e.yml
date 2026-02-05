@@ -1,13 +1,27 @@
 name: E2E Tests
 
 on:
-  push:
   pull_request:
+    branches:
+      - main
+      - gh/**
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual triggering
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_number || github.ref }}
+  cancel-in-progress: true
+
 
 jobs:
   test-e2e:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: operator
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -15,7 +29,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: operator/go.mod
 
       - name: Install the latest version of kind
         run: |
