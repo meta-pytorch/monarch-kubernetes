@@ -319,7 +319,7 @@ spec:
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				podNames := utils.GetNonEmptyLines(strings.ReplaceAll(output, " ", "\n"))
-				g.Expect(len(podNames)).To(Equal(2), "Expected 2 pods to be created")
+				g.Expect(podNames).To(HaveLen(2), "Expected 2 pods to be created")
 			}
 			Eventually(verifyPodsCreated, 2*time.Minute, time.Second).Should(Succeed())
 
