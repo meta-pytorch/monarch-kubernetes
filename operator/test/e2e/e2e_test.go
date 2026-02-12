@@ -260,7 +260,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 		It("should reconcile a MonarchMesh CRD successfully", func() {
 			const testNamespace = "monarch-e2e-test"
-			const meshName = "test-mesh"
+			const meshName = "testmesh"
 
 			By("creating a test namespace for the MonarchMesh")
 			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
@@ -350,6 +350,47 @@ spec:
 				g.Expect(output).To(BeEmpty(), "Expected pods to be deleted")
 			}
 			Eventually(verifyPodsDeleted, 2*time.Minute, time.Second).Should(Succeed())
+		})
+
+		Context("MonarchMesh Name Validation", func() {
+			It("should fail to apply a MonarchMesh with hyphens in the name", func() {
+				const testNamespace = "monarch-e2e-validation"
+				const invalidMeshName = "invalid-mesh-name" // Contains hyphens
+
+				By("creating a test namespace")
+				cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+				_, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+
+				DeferCleanup(func() {
+					cmd := exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found")
+					_, _ = utils.Run(cmd)
+				})
+
+				By("applying a MonarchMesh with an invalid name")
+				invalidYAML := fmt.Sprintf(`
+apiVersion: monarch.pytorch.org/v1alpha1
+kind: MonarchMesh
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  replicas: 1
+  podTemplate:
+    containers:
+    - name: worker
+      image: busybox:latest
+`, invalidMeshName, testNamespace)
+
+				cmd = exec.Command("kubectl", "apply", "-f", "-")
+				cmd.Stdin = strings.NewReader(invalidYAML)
+				output, err := utils.Run(cmd)
+
+				// The apply should fail
+				Expect(err).To(HaveOccurred(), "The API server should have rejected the name with hyphens")
+				Expect(output).To(ContainSubstring("MonarchMesh name must be alphanumeric and underscores only"))
+			})
+
 		})
 	})
 })

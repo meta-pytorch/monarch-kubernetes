@@ -8500,6 +8500,11 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: MonarchMesh name must start with a lowercase letter and be lowercase
+            alphanumeric with less than 64 characters
+          rule: self.metadata.name.matches('^[a-z][a-z0-9]*$') && self.metadata.name.size()
+            <= 63
     served: true
     storage: true
     subresources:
