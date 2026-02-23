@@ -51,6 +51,7 @@ type MonarchMeshStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:storageversion
 // +kubebuilder:resource:path=monarchmeshes,scope=Namespaced
+// +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z][a-z0-9]*$') && self.metadata.name.size() <= 63",message="MonarchMesh name must start with a lowercase letter and be lowercase alphanumeric with less than 64 characters"
 
 // MonarchMesh is the Schema for the monarchmeshes API
 type MonarchMesh struct {

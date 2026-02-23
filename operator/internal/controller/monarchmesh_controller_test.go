@@ -59,7 +59,7 @@ var _ = Describe("MonarchMesh Controller", func() {
 	})
 
 	Context("When reconciling a MonarchMesh resource", func() {
-		const resourceName = "test-mesh"
+		const resourceName = "testmesh"
 
 		BeforeEach(func() {
 			typeNamespacedName = types.NamespacedName{
@@ -410,7 +410,7 @@ var _ = Describe("MonarchMesh Controller", func() {
 
 	Context("When MonarchMesh is deleted", func() {
 		It("should handle deletion gracefully", func() {
-			const resourceName = "delete-test-mesh"
+			const resourceName = "deletetestmesh"
 			typeNamespacedName := types.NamespacedName{
 				Name:      resourceName,
 				Namespace: "default",
@@ -464,6 +464,36 @@ var _ = Describe("MonarchMesh Controller", func() {
 			deletedMesh := &monarchv1alpha1.MonarchMesh{}
 			err = k8sClient.Get(ctx, typeNamespacedName, deletedMesh)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
+		})
+	})
+	Context("When MonarchMesh name is invalid", func() {
+		It("should fail creation for invalid names", func() {
+			invalidNames := []string{
+				"1startwithnumber",
+				"StartWithCap",
+				"has-dash",
+				"ends-with-dash-",
+				"looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong", // 64 chars
+			}
+			for _, name := range invalidNames {
+				mesh := &monarchv1alpha1.MonarchMesh{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      name,
+						Namespace: "default",
+					},
+					Spec: monarchv1alpha1.MonarchMeshSpec{
+						Replicas: 1,
+						PodTemplate: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
+					},
+				}
+				err := k8sClient.Create(ctx, mesh)
+				Expect(err).To(HaveOccurred(), "Expected creation to fail for name: %s", name)
+			}
 		})
 	})
 })
