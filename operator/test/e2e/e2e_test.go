@@ -388,7 +388,9 @@ spec:
 
 				// The apply should fail
 				Expect(err).To(HaveOccurred(), "The API server should have rejected the name with hyphens")
-				Expect(output).To(ContainSubstring("MonarchMesh name must be alphanumeric and underscores only"))
+				expectedMsg := "MonarchMesh name must start with a lowercase letter" +
+					" and be lowercase alphanumeric with less than 64 characters"
+				Expect(output).To(ContainSubstring(expectedMsg))
 			})
 
 		})
