@@ -63,7 +63,7 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
-        image: ghcr.io/meta-pytorch/monarch-operator:latest
+        image: controller:latest
         name: manager
         ports: []
         securityContext:
