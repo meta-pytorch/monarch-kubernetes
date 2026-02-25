@@ -10,6 +10,9 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"maps"
 
 	"github.com/go-logr/logr"
@@ -31,6 +34,17 @@ type MonarchMeshReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	Config Config
+}
+
+// podTemplateHashAnnotation stores the SHA-256 hash of the desired PodSpec from the CRD.
+// This allows the controller to detect actual user changes to the pod template and avoid
+// overwriting server-side mutations (e.g., from admission webhooks that rewrite image URLs).
+const podTemplateHashAnnotation = "monarch.pytorch.org/desired-pod-template-hash"
+
+// computePodTemplateHash returns a SHA-256 hex digest of the JSON-serialized PodSpec.
+func computePodTemplateHash(spec corev1.PodSpec) string {
+	data, _ := json.Marshal(spec)
+	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 
 // RBAC permissions for the controller.
@@ -140,7 +154,25 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// See: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#parallel-pod-management
 		ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
 		ss.Spec.Template.Labels = selectorLabels
-		ss.Spec.Template.Spec = mesh.Spec.PodTemplate
+
+		// Only overwrite the pod template when the desired spec actually changed (hash differs)
+		// or on initial creation. This avoids fighting with admission webhooks that mutate
+		// fields like image URLs (e.g., ECR mirror rewrites).
+		desiredHash := computePodTemplateHash(mesh.Spec.PodTemplate)
+		currentHash := ""
+		if ss.Annotations != nil {
+			currentHash = ss.Annotations[podTemplateHashAnnotation]
+		}
+		if currentHash != desiredHash || ss.CreationTimestamp.IsZero() {
+			ss.Spec.Template.Spec = mesh.Spec.PodTemplate
+		}
+
+		// Always record the desired hash so future reconciles can detect real changes.
+		if ss.Annotations == nil {
+			ss.Annotations = make(map[string]string)
+		}
+		ss.Annotations[podTemplateHashAnnotation] = desiredHash
+
 		return ctrl.SetControllerReference(&mesh, ss, r.Scheme)
 	})
 	if err != nil {
