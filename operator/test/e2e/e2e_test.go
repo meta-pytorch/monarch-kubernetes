@@ -352,6 +352,119 @@ spec:
 			Eventually(verifyPodsDeleted, 2*time.Minute, time.Second).Should(Succeed())
 		})
 
+		It("should not restart pods when StatefulSet image is mutated externally", func() {
+			const testNamespace = "monarch-e2e-webhook"
+			const meshName = "webhookmesh"
+
+			By("creating a test namespace")
+			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
+
+			DeferCleanup(func() {
+				By("cleaning up the test namespace")
+				cmd := exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("applying the MonarchMesh CRD")
+			monarchMeshYAML := fmt.Sprintf(`
+apiVersion: monarch.pytorch.org/v1alpha1
+kind: MonarchMesh
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  replicas: 2
+  port: 26600
+  podTemplate:
+    containers:
+    - name: worker
+      image: busybox:latest
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      ports:
+      - name: monarch
+        containerPort: 26600
+`, meshName, testNamespace)
+
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(monarchMeshYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply MonarchMesh CRD")
+
+			By("waiting for pods to become ready")
+			verifyReadyReplicas := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "monarchmesh", meshName,
+					"-n", testNamespace,
+					"-o", "jsonpath={.status.readyReplicas}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("2"), "Expected readyReplicas to be 2")
+			}
+			Eventually(verifyReadyReplicas, 3*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying the hash annotation exists on the StatefulSet")
+			cmd = exec.Command("kubectl", "get", "statefulset", meshName,
+				"-n", testNamespace,
+				"-o", "jsonpath={.metadata.annotations.monarch\\.pytorch\\.org/desired-pod-template-hash}")
+			hashOutput, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(hashOutput).NotTo(BeEmpty(), "Expected hash annotation to be set")
+
+			By("recording pod UIDs before mutation")
+			cmd = exec.Command("kubectl", "get", "pods",
+				"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+				"-n", testNamespace,
+				"-o", "jsonpath={.items[*].metadata.uid}")
+			podUIDsBefore, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(podUIDsBefore).NotTo(BeEmpty())
+
+			By("simulating a webhook mutation by patching the StatefulSet image directly")
+			patchJSON := `{"spec":{"template":{"spec":{"containers":[{"name":"worker","image":"busybox:1.36"}]}}}}`
+			cmd = exec.Command("kubectl", "patch", "statefulset", meshName,
+				"-n", testNamespace,
+				"--type=strategic",
+				"-p", patchJSON)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to patch StatefulSet")
+
+			By("triggering a reconcile by annotating the MonarchMesh CRD")
+			cmd = exec.Command("kubectl", "annotate", "monarchmesh", meshName,
+				"-n", testNamespace,
+				"trigger-reconcile=true", "--overwrite")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for reconciliation to settle")
+			time.Sleep(10 * time.Second)
+
+			By("verifying the StatefulSet image was NOT reverted (hash unchanged, so template preserved)")
+			cmd = exec.Command("kubectl", "get", "statefulset", meshName,
+				"-n", testNamespace,
+				"-o", "jsonpath={.spec.template.spec.containers[0].image}")
+			imageAfter, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(imageAfter).To(Equal("busybox:1.36"),
+				"Expected the webhook-mutated image to be preserved, not overwritten by the controller")
+
+			By("verifying pods were NOT restarted (UIDs unchanged)")
+			cmd = exec.Command("kubectl", "get", "pods",
+				"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+				"-n", testNamespace,
+				"-o", "jsonpath={.items[*].metadata.uid}")
+			podUIDsAfter, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(podUIDsAfter).To(Equal(podUIDsBefore),
+				"Pod UIDs changed, indicating pods were unnecessarily restarted")
+
+			By("deleting the MonarchMesh CRD")
+			cmd = exec.Command("kubectl", "delete", "monarchmesh", meshName, "-n", testNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 		Context("MonarchMesh Name Validation", func() {
 			It("should fail to apply a MonarchMesh with hyphens in the name", func() {
 				const testNamespace = "monarch-e2e-validation"

@@ -408,6 +408,127 @@ var _ = Describe("MonarchMesh Controller", func() {
 		})
 	})
 
+	Context("When webhook mutates pod template", func() {
+		const resourceName = "webhooktestmesh"
+
+		AfterEach(func() {
+			mesh := &monarchv1alpha1.MonarchMesh{}
+			nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
+			err := k8sClient.Get(ctx, nn, mesh)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, mesh)).To(Succeed())
+			}
+			svc := &corev1.Service{}
+			svcNN := types.NamespacedName{Name: resourceName + config.ServiceSuffix, Namespace: "default"}
+			err = k8sClient.Get(ctx, svcNN, svc)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, svc)).To(Succeed())
+			}
+			ss := &appsv1.StatefulSet{}
+			err = k8sClient.Get(ctx, nn, ss)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, ss)).To(Succeed())
+			}
+		})
+
+		It("should not trigger rolling update when pod template spec is unchanged", func() {
+			nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
+
+			By("Creating the MonarchMesh resource")
+			mesh := &monarchv1alpha1.MonarchMesh{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+				},
+				Spec: monarchv1alpha1.MonarchMeshSpec{
+					Replicas: 2,
+					PodTemplate: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "worker",
+							Image: "us-west-2.amazonaws.com/monarch:latest",
+						}},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mesh)).To(Succeed())
+
+			By("Running initial reconcile")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying the StatefulSet was created with the annotation")
+			ss := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, nn, ss)).To(Succeed())
+			Expect(ss.Annotations).To(HaveKey(podTemplateHashAnnotation))
+			Expect(ss.Spec.Template.Spec.Containers[0].Image).To(Equal("us-west-2.amazonaws.com/monarch:latest"))
+
+			By("Simulating webhook mutation of the image URL on the StatefulSet")
+			ss.Spec.Template.Spec.Containers[0].Image = "us-east-2.amazonaws.com/monarch:latest"
+			Expect(k8sClient.Update(ctx, ss)).To(Succeed())
+
+			By("Running second reconcile (simulating controller seeing drift)")
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying the StatefulSet template was NOT overwritten")
+			Expect(k8sClient.Get(ctx, nn, ss)).To(Succeed())
+			Expect(ss.Spec.Template.Spec.Containers[0].Image).To(Equal("us-east-2.amazonaws.com/monarch:latest"))
+		})
+
+		It("should update pod template when CRD spec changes", func() {
+			nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
+
+			By("Creating the MonarchMesh resource")
+			mesh := &monarchv1alpha1.MonarchMesh{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+				},
+				Spec: monarchv1alpha1.MonarchMeshSpec{
+					Replicas: 2,
+					PodTemplate: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "worker",
+							Image: "us-west-2.amazonaws.com/monarch:v1",
+						}},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mesh)).To(Succeed())
+
+			By("Running initial reconcile")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying initial StatefulSet state")
+			ss := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, nn, ss)).To(Succeed())
+			initialHash := ss.Annotations[podTemplateHashAnnotation]
+			Expect(initialHash).NotTo(BeEmpty())
+
+			By("Simulating webhook mutation")
+			ss.Spec.Template.Spec.Containers[0].Image = "us-east-2.amazonaws.com/monarch:v1"
+			Expect(k8sClient.Update(ctx, ss)).To(Succeed())
+
+			By("Updating the CRD spec with a new image version")
+			Expect(k8sClient.Get(ctx, nn, mesh)).To(Succeed())
+			mesh.Spec.PodTemplate.Containers[0].Image = "us-west-2.amazonaws.com/monarch:v2"
+			Expect(k8sClient.Update(ctx, mesh)).To(Succeed())
+
+			By("Reconciling after CRD change")
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying the StatefulSet template WAS updated with the new CRD spec")
+			Expect(k8sClient.Get(ctx, nn, ss)).To(Succeed())
+			Expect(ss.Spec.Template.Spec.Containers[0].Image).To(Equal("us-west-2.amazonaws.com/monarch:v2"))
+
+			By("Verifying the annotation hash changed")
+			newHash := ss.Annotations[podTemplateHashAnnotation]
+			Expect(newHash).NotTo(Equal(initialHash))
+		})
+	})
+
 	Context("When MonarchMesh is deleted", func() {
 		It("should handle deletion gracefully", func() {
 			const resourceName = "deletetestmesh"
