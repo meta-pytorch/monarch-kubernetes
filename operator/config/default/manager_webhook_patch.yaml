@@ -1,0 +1,22 @@
+# Exposes the conversion webhook port on the manager Deployment.
+# The serving certificate is provisioned at runtime by the operator
+# itself (see internal/webhook/cert.go), so no cert volume mount is needed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          ports:
+            - containerPort: 9443
+              name: webhook-server
+              protocol: TCP
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace

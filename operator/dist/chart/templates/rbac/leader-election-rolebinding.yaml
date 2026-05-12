@@ -1,22 +1,18 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-    labels:
-        app.kubernetes.io/managed-by: {{ .Release.Service }}
-        app.kubernetes.io/name: monarch-operator
-    name: monarch-leader-election-rolebinding
-    namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "operator.name" . }}-operator
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "operator.resourceName" (dict "suffix" "leader-election-rolebinding" "context" $) }}
+  namespace: {{ .Release.Namespace }}
 roleRef:
-    apiGroup: rbac.authorization.k8s.io
-    kind: Role
-    name: monarch-leader-election-role
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "operator.resourceName" (dict "suffix" "leader-election-role" "context" $) }}
 subjects:
-    - kind: ServiceAccount
-      name: monarch-controller-manager
-      namespace: {{ .Release.Namespace }}
+- kind: ServiceAccount
+  name: {{ include "operator.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}

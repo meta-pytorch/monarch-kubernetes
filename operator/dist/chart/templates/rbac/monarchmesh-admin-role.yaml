@@ -1,28 +1,31 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-{{- if .Values.rbacHelpers.enable }}
+{{- if .Values.rbac.helpers.enable }}
 apiVersion: rbac.authorization.k8s.io/v1
+{{- if .Values.rbac.namespaced }}
+kind: Role
+{{- else }}
 kind: ClusterRole
+{{- end }}
 metadata:
-    labels:
-        app.kubernetes.io/managed-by: {{ .Release.Service }}
-        app.kubernetes.io/name: monarch-operator
-    name: monarch-monarchmesh-admin-role
+{{- if .Values.rbac.namespaced }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "operator.name" . }}-operator
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "operator.resourceName" (dict "suffix" "monarchmesh-admin-role" "context" $) }}
 rules:
-    - apiGroups:
-        - monarch.pytorch.org
-      resources:
-        - monarchmeshes
-      verbs:
-        - '*'
-    - apiGroups:
-        - monarch.pytorch.org
-      resources:
-        - monarchmeshes/status
-      verbs:
-        - get
+- apiGroups:
+  - monarch.pytorch.org
+  resources:
+  - monarchmeshes
+  verbs:
+  - '*'
+- apiGroups:
+  - monarch.pytorch.org
+  resources:
+  - monarchmeshes/status
+  verbs:
+  - get
 {{- end }}

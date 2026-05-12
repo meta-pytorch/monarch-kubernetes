@@ -1,0 +1,17 @@
+# Service that fronts the conversion webhook served by the operator's
+# webhook server. The apiserver dials this Service when it needs to convert
+# MonarchMesh resources between v1alpha1 and v1alpha2. The Service's selector
+# must match the manager Deployment's pod labels (set in config/manager).
+apiVersion: v1
+kind: Service
+metadata:
+  name: monarch-operator-webhook
+  namespace: system
+spec:
+  ports:
+    - name: https
+      port: 443
+      targetPort: 9443
+      protocol: TCP
+  selector:
+    control-plane: controller-manager

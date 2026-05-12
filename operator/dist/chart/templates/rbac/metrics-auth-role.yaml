@@ -1,25 +1,19 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-{{- if .Values.metrics.enable }}
+{{- if and .Values.metrics.enable .Values.metrics.secure }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-    name: monarch-metrics-auth-role
+  name: {{ include "operator.resourceName" (dict "suffix" "metrics-auth-role" "context" $) }}
 rules:
-    - apiGroups:
-        - authentication.k8s.io
-      resources:
-        - tokenreviews
-      verbs:
-        - create
-    - apiGroups:
-        - authorization.k8s.io
-      resources:
-        - subjectaccessreviews
-      verbs:
-        - create
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
 {{- end }}

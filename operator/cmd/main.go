@@ -9,6 +9,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -17,10 +18,12 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -30,7 +33,15 @@ import (
 	monarchv1alpha1 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha1"
 	monarchv1alpha2 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha2"
 	"github.com/meta-pytorch/monarch-kubernetes/internal/controller"
+	monarchwebhook "github.com/meta-pytorch/monarch-kubernetes/internal/webhook"
 	// +kubebuilder:scaffold:imports
+)
+
+const (
+	monarchMeshesCRDName  = "monarchmeshes.monarch.pytorch.org"
+	defaultWebhookCertDir = "/tmp/k8s-webhook-server/serving-certs"
+	defaultWebhookSecret  = "monarch-operator-webhook-cert"
+	defaultWebhookSvcName = "monarch-operator-webhook"
 )
 
 var (
@@ -40,10 +51,24 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 
 	utilruntime.Must(monarchv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(monarchv1alpha2.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
+}
+
+// readOperatorNamespace returns the namespace the operator runs in, sourced
+// from the downward-API env var POD_NAMESPACE or the ServiceAccount file.
+func readOperatorNamespace() (string, error) {
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		return ns, nil
+	}
+	data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 // nolint:gocyclo
@@ -64,9 +89,16 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate. "+
+		"If empty, the operator generates a self-signed CA + serving cert on startup, stores them in a Secret, "+
+		"writes them to "+defaultWebhookCertDir+", and patches the CRD's spec.conversion.webhook.clientConfig.caBundle.")
 	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
 	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
+	var webhookServiceName, webhookSecretName string
+	flag.StringVar(&webhookServiceName, "webhook-service-name", defaultWebhookSvcName,
+		"Name of the Service the apiserver dials for conversion. Used as DNS SAN on the self-signed serving cert.")
+	flag.StringVar(&webhookSecretName, "webhook-cert-secret", defaultWebhookSecret,
+		"Name of the Secret used to persist the self-signed CA + serving cert across restarts.")
 	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
@@ -109,6 +141,35 @@ func main() {
 		webhookServerOptions.CertDir = webhookCertPath
 		webhookServerOptions.CertName = webhookCertName
 		webhookServerOptions.KeyName = webhookCertKey
+	} else {
+		// No external cert source — bootstrap a self-signed CA + serving cert before the
+		// manager starts. This patches the CRD's caBundle so the apiserver trusts our
+		// /convert endpoint without requiring cert-manager.
+		ns, err := readOperatorNamespace()
+		if err != nil {
+			setupLog.Error(err, "unable to determine operator namespace for webhook cert bootstrap")
+			os.Exit(1)
+		}
+		bootstrapClient, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
+		if err != nil {
+			setupLog.Error(err, "unable to build bootstrap client for webhook cert provisioning")
+			os.Exit(1)
+		}
+		if err := monarchwebhook.EnsureCerts(context.Background(), bootstrapClient, monarchwebhook.CertBootstrapOptions{
+			Namespace:   ns,
+			ServiceName: webhookServiceName,
+			SecretName:  webhookSecretName,
+			CertDir:     defaultWebhookCertDir,
+			CRDName:     monarchMeshesCRDName,
+		}); err != nil {
+			setupLog.Error(err, "unable to bootstrap conversion webhook certs")
+			os.Exit(1)
+		}
+		setupLog.Info("conversion webhook certs ready",
+			"cert-dir", defaultWebhookCertDir, "secret", webhookSecretName, "service", webhookServiceName)
+		webhookServerOptions.CertDir = defaultWebhookCertDir
+		webhookServerOptions.CertName = "tls.crt"
+		webhookServerOptions.KeyName = "tls.key"
 	}
 
 	webhookServer := webhook.NewServer(webhookServerOptions)

@@ -583,6 +583,157 @@ spec:
 			Expect(err).NotTo(HaveOccurred())
 		})
 
+		It("should convert v1alpha1 <-> v1alpha2 transparently via the webhook", func() {
+			const testNamespace = "monarch-e2e-conversion"
+			const meshName = "convmesh"
+
+			By("creating a test namespace")
+			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
+
+			DeferCleanup(func() {
+				By("cleaning up the test namespace")
+				cmd := exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("verifying the conversion webhook is configured on the CRD")
+			cmd = exec.Command("kubectl", "get", "crd", "monarchmeshes.monarch.pytorch.org",
+				"-o", "jsonpath={.spec.conversion.strategy}")
+			strategy, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strategy).To(Equal("Webhook"),
+				"Expected CRD conversion strategy=Webhook, got %q", strategy)
+
+			cmd = exec.Command("kubectl", "get", "crd", "monarchmeshes.monarch.pytorch.org",
+				"-o", "jsonpath={.spec.conversion.webhook.clientConfig.caBundle}")
+			caBundle, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(caBundle).NotTo(BeEmpty(),
+				"Expected the operator to have patched a non-empty caBundle on the CRD")
+
+			By("verifying both versions are served")
+			cmd = exec.Command("kubectl", "get", "crd", "monarchmeshes.monarch.pytorch.org",
+				"-o", "jsonpath={.spec.versions[*].name}")
+			versions, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(versions).To(ContainSubstring("v1alpha1"))
+			Expect(versions).To(ContainSubstring("v1alpha2"))
+
+			By("applying a MonarchMesh manifest in the legacy v1alpha1 shape")
+			v1alpha1YAML := fmt.Sprintf(`
+apiVersion: monarch.pytorch.org/v1alpha1
+kind: MonarchMesh
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  replicas: 1
+  port: 26600
+  podTemplate:
+    containers:
+    - name: worker
+      image: busybox:latest
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+`, meshName, testNamespace)
+
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(v1alpha1YAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(),
+				"v1alpha1 apply failed — the conversion webhook is likely unreachable or untrusted")
+
+			By("reading the object back as v1alpha2 (exercises ConvertTo via storage)")
+			verifyV1alpha2Shape := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "monarchmeshes.v1alpha2.monarch.pytorch.org",
+					meshName, "-n", testNamespace,
+					"-o", "jsonpath={.spec.podTemplate.spec.containers[0].image}")
+				img, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(img).To(Equal("busybox:latest"),
+					"Expected v1alpha2 view to surface the image under .spec.podTemplate.spec.containers[0]")
+			}
+			Eventually(verifyV1alpha2Shape, 30*time.Second, time.Second).Should(Succeed())
+
+			By("reading the object back as v1alpha1 (exercises ConvertFrom from stored v1alpha2)")
+			verifyV1alpha1Shape := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "monarchmeshes.v1alpha1.monarch.pytorch.org",
+					meshName, "-n", testNamespace,
+					"-o", "jsonpath={.spec.podTemplate.containers[0].image}")
+				img, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(img).To(Equal("busybox:latest"),
+					"Expected v1alpha1 view to surface the image under .spec.podTemplate.containers[0]")
+			}
+			Eventually(verifyV1alpha1Shape, 30*time.Second, time.Second).Should(Succeed())
+
+			By("verifying the controller reconciled the converted object into a StatefulSet")
+			verifyStatefulSet := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "statefulset", meshName,
+					"-n", testNamespace,
+					"-o", "jsonpath={.spec.template.spec.containers[0].image}")
+				img, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(img).To(Equal("busybox:latest"))
+			}
+			Eventually(verifyStatefulSet, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("applying a v1alpha2 update with pod-level metadata and reading it back as v1alpha1")
+			v1alpha2YAML := fmt.Sprintf(`
+apiVersion: monarch.pytorch.org/v1alpha2
+kind: MonarchMesh
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  replicas: 1
+  port: 26600
+  podTemplate:
+    metadata:
+      labels:
+        team: monarch
+      annotations:
+        custom: value-1
+    spec:
+      containers:
+      - name: worker
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        command: ["sleep", "infinity"]
+`, meshName, testNamespace)
+
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(v1alpha2YAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "v1alpha2 apply failed")
+
+			By("verifying v1alpha1 view drops the pod-level metadata (lossy ConvertFrom is expected)")
+			verifyV1alpha1NoMeta := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "monarchmeshes.v1alpha1.monarch.pytorch.org",
+					meshName, "-n", testNamespace,
+					"-o", "jsonpath={.spec.podTemplate.containers[0].image}")
+				img, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(img).To(Equal("busybox:1.36"))
+				// v1alpha1 has no place to carry pod-level labels/annotations — confirm they're absent.
+				cmd = exec.Command("kubectl", "get", "monarchmeshes.v1alpha1.monarch.pytorch.org",
+					meshName, "-n", testNamespace,
+					"-o", "jsonpath={.spec.podTemplate.metadata}")
+				meta, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(meta).To(BeEmpty(),
+					"Expected v1alpha1 view to drop pod-level metadata, got %q", meta)
+			}
+			Eventually(verifyV1alpha1NoMeta, 30*time.Second, time.Second).Should(Succeed())
+
+			By("deleting the MonarchMesh CRD")
+			cmd = exec.Command("kubectl", "delete", "monarchmesh", meshName, "-n", testNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 		Context("MonarchMesh Name Validation", func() {
 			It("should fail to apply a MonarchMesh with hyphens in the name", func() {
 				const testNamespace = "monarch-e2e-validation"

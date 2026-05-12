@@ -1,26 +1,22 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 {{- if .Values.metrics.enable }}
 apiVersion: v1
 kind: Service
 metadata:
-    labels:
-        app.kubernetes.io/managed-by: {{ .Release.Service }}
-        app.kubernetes.io/name: monarch-operator
-        control-plane: controller-manager
-    name: monarch-controller-manager-metrics-service
-    namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "operator.name" . }}-operator
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    control-plane: controller-manager
+  name: {{ include "operator.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}
+  namespace: {{ .Release.Namespace }}
 spec:
-    ports:
-        - name: https
-          port: {{ .Values.metrics.port }}
-          protocol: TCP
-          targetPort: {{ .Values.metrics.port }}
-    selector:
-        app.kubernetes.io/name: monarch-operator
-        control-plane: controller-manager
+  ports:
+  - name: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+    port: {{ .Values.metrics.port }}
+    protocol: TCP
+    targetPort: {{ .Values.metrics.port }}
+  selector:
+    app.kubernetes.io/name: {{ include "operator.name" . }}-operator
+    control-plane: controller-manager
 {{- end }}

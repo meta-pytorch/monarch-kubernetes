@@ -1,0 +1,21 @@
+# The following patch enables a conversion webhook for the MonarchMesh CRD.
+# The caBundle field is populated at runtime by the operator
+# (see internal/webhook/cert.go), which generates a self-signed CA on
+# first start, stores it in a Secret in the operator namespace, and patches
+# the CRD's spec.conversion.webhook.clientConfig.caBundle field to match.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: monarchmeshes.monarch.pytorch.org
+spec:
+  conversion:
+    strategy: Webhook
+    webhook:
+      conversionReviewVersions:
+        - v1
+      clientConfig:
+        service:
+          namespace: system
+          name: monarch-operator-webhook
+          path: /convert
+          port: 443
