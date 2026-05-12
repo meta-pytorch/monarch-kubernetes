@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	monarchv1alpha1 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha1"
+	monarchv1alpha2 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha2"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -52,6 +53,8 @@ var _ = BeforeSuite(func() {
 
 	var err error
 	err = monarchv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = monarchv1alpha2.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme

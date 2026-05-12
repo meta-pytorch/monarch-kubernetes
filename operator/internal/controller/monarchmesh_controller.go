@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	monarchv1alpha1 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha1"
+	monarchv1alpha2 "github.com/meta-pytorch/monarch-kubernetes/api/v1alpha2"
 )
 
 // MonarchMeshReconciler reconciles a MonarchMesh object
@@ -36,14 +36,16 @@ type MonarchMeshReconciler struct {
 	Config Config
 }
 
-// podTemplateHashAnnotation stores the SHA-256 hash of the desired PodSpec from the CRD.
-// This allows the controller to detect actual user changes to the pod template and avoid
-// overwriting server-side mutations (e.g., from admission webhooks that rewrite image URLs).
+// podTemplateHashAnnotation stores the SHA-256 hash of the desired PodTemplateSpec from
+// the CRD (covering both pod metadata and spec). This allows the controller to detect
+// actual user changes to the pod template and avoid overwriting server-side mutations
+// (e.g., from admission webhooks that rewrite image URLs).
 const podTemplateHashAnnotation = "monarch.pytorch.org/desired-pod-template-hash"
 
-// computePodTemplateHash returns a SHA-256 hex digest of the deep-printed PodSpec inspired from
-// "k8s.io/kubernetes/pkg/util/hash".
-func computePodTemplateHash(spec corev1.PodSpec) string {
+// computePodTemplateHash returns a SHA-256 hex digest of the deep-printed PodTemplateSpec
+// inspired from "k8s.io/kubernetes/pkg/util/hash". Covers both metadata (labels/annotations)
+// and spec so changes to either trigger a pod template sync.
+func computePodTemplateHash(template corev1.PodTemplateSpec) string {
 	hasher := sha256.New()
 	printer := spew.ConfigState{
 		Indent:         " ",
@@ -51,7 +53,7 @@ func computePodTemplateHash(spec corev1.PodSpec) string {
 		DisableMethods: true,
 		SpewKeys:       true,
 	}
-	_, _ = printer.Fprintf(hasher, "%#v", spec)
+	_, _ = printer.Fprintf(hasher, "%#v", template)
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
 
@@ -96,7 +98,7 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// 1. Fetch the MonarchMesh object.
 	// If not found, the object was deleted - cleanup is handled automatically via OwnerReferences
 	// (Kubernetes garbage collection deletes owned StatefulSets and Services).
-	var mesh monarchv1alpha1.MonarchMesh
+	var mesh monarchv1alpha2.MonarchMesh
 	if err := r.Get(ctx, req.NamespacedName, &mesh); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -161,9 +163,8 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// This can speed up large worker pod launches.
 		// See: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#parallel-pod-management
 		ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
-		ss.Spec.Template.Labels = selectorLabels
 
-		// Only overwrite the pod template when the desired spec actually changed (hash differs)
+		// Only overwrite the pod template when the desired template actually changed (hash differs)
 		// or on initial creation. This avoids fighting with admission webhooks that mutate
 		// fields like image URLs (e.g., ECR mirror rewrites).
 		desiredHash := computePodTemplateHash(mesh.Spec.PodTemplate)
@@ -172,8 +173,12 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			currentHash = ss.Annotations[podTemplateHashAnnotation]
 		}
 		if currentHash != desiredHash || ss.CreationTimestamp.IsZero() {
-			ss.Spec.Template.Spec = mesh.Spec.PodTemplate
+			ss.Spec.Template = *mesh.Spec.PodTemplate.DeepCopy()
 		}
+		// Always ensure controller-managed selector labels are present on the pod template.
+		// Without these, the StatefulSet selector would not match its own pods.
+		// User-supplied pod labels remain; selector labels win on collision.
+		ss.Spec.Template.Labels = mergeStringMaps(ss.Spec.Template.Labels, selectorLabels, "label", log)
 
 		// Always record the desired hash so future reconciles can detect real changes.
 		// Annotations from MonarchMesh metadata are propagated to the StatefulSet alongside
@@ -214,7 +219,7 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // SetupWithManager sets up the controller with the Manager.
 func (r *MonarchMeshReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&monarchv1alpha1.MonarchMesh{}).
+		For(&monarchv1alpha2.MonarchMesh{}).
 		// Owns() watches StatefulSets that have an OwnerReference pointing to a MonarchMesh.
 		// When a StatefulSet changes (e.g., pod becomes ready, status updates), controller-runtime
 		// automatically looks up the OwnerReference and enqueues a reconcile for the parent MonarchMesh.

@@ -6,14 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package v1alpha1
+package v1alpha2
 
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// MonarchMeshSpec defines the desired state of MonarchMesh
+// MonarchMeshSpec defines the desired state of MonarchMesh.
 type MonarchMeshSpec struct {
 	// Replicas is the number of Monarch worker pods to run.
 	// +kubebuilder:validation:Minimum=1
@@ -25,9 +25,12 @@ type MonarchMeshSpec struct {
 	// +optional
 	Port int32 `json:"port,omitempty"`
 
-	// PodTemplate defines the pod specification for Monarch workers.
-	// Labels and annotations are inherited from the MonarchMesh metadata.
-	PodTemplate corev1.PodSpec `json:"podTemplate"`
+	// PodTemplate defines the pod template (metadata + spec) for Monarch worker pods.
+	// User-supplied labels in `podTemplate.metadata.labels` are propagated to pods, merged
+	// with controller-managed selector labels (the latter win on collision to keep the
+	// StatefulSet selector valid). Annotations in `podTemplate.metadata.annotations` are
+	// propagated as-is to pods. Pod spec lives under `podTemplate.spec`.
+	PodTemplate corev1.PodTemplateSpec `json:"podTemplate"`
 }
 
 // MonarchMeshStatus defines the observed state of MonarchMesh.
@@ -49,11 +52,11 @@ type MonarchMeshStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:deprecatedversion:warning="monarch.pytorch.org/v1alpha1 MonarchMesh is deprecated; use monarch.pytorch.org/v1alpha2"
+// +kubebuilder:storageversion
 // +kubebuilder:resource:path=monarchmeshes,scope=Namespaced
 // +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z][a-z0-9]*$') && self.metadata.name.size() <= 63",message="MonarchMesh name must start with a lowercase letter and be lowercase alphanumeric with less than 64 characters"
 
-// MonarchMesh is the Schema for the monarchmeshes API
+// MonarchMesh is the Schema for the monarchmeshes API.
 type MonarchMesh struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -72,12 +75,16 @@ type MonarchMesh struct {
 
 // +kubebuilder:object:root=true
 
-// MonarchMeshList contains a list of MonarchMesh
+// MonarchMeshList contains a list of MonarchMesh.
 type MonarchMeshList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []MonarchMesh `json:"items"`
 }
+
+// Hub marks this type as the conversion hub. All other versions convert to/from this type.
+// See sigs.k8s.io/controller-runtime/pkg/conversion for details.
+func (*MonarchMesh) Hub() {}
 
 func init() {
 	SchemeBuilder.Register(&MonarchMesh{}, &MonarchMeshList{})
