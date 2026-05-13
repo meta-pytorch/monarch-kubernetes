@@ -406,6 +406,63 @@ var _ = Describe("MonarchMesh Controller", func() {
 			Expect(svc.Labels).NotTo(HaveKey("kueue.x-k8s.io/queue-name"))
 			Expect(svc.Labels).NotTo(HaveKey("custom-label"))
 		})
+
+		It("should propagate annotations from MonarchMesh to StatefulSet", func() {
+			By("Creating the MonarchMesh resource with custom annotations")
+			mesh := &monarchv1alpha1.MonarchMesh{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+					Annotations: map[string]string{
+						"kueue.x-k8s.io/priority-class": "high",
+						"custom-annotation":             "custom-value",
+						// This user-defined value will be overridden by the controller-managed annotation.
+						podTemplateHashAnnotation: "user-supplied-bogus-hash",
+					},
+				},
+				Spec: monarchv1alpha1.MonarchMeshSpec{
+					Replicas: 2,
+					PodTemplate: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "worker",
+							Image: "monarch:latest",
+						}},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mesh)).To(Succeed())
+
+			By("Reconciling the resource")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying the StatefulSet has propagated annotations")
+			ss := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, ss)).To(Succeed())
+
+			// Verify custom annotations are propagated
+			Expect(ss.Annotations).To(HaveKeyWithValue("kueue.x-k8s.io/priority-class", "high"))
+			Expect(ss.Annotations).To(HaveKeyWithValue("custom-annotation", "custom-value"))
+
+			// Verify controller-managed hash annotation overrides any user-supplied collision
+			Expect(ss.Annotations).To(HaveKey(podTemplateHashAnnotation))
+			Expect(ss.Annotations[podTemplateHashAnnotation]).NotTo(Equal("user-supplied-bogus-hash"))
+
+			// Verify pod template does NOT inherit annotations (mesh-level only)
+			Expect(ss.Spec.Template.Annotations).NotTo(HaveKey("custom-annotation"))
+
+			By("Verifying the Service does NOT have propagated annotations")
+			svc := &corev1.Service{}
+			svcName := types.NamespacedName{
+				Name:      resourceName + config.ServiceSuffix,
+				Namespace: "default",
+			}
+			Expect(k8sClient.Get(ctx, svcName, svc)).To(Succeed())
+			Expect(svc.Annotations).NotTo(HaveKey("kueue.x-k8s.io/priority-class"))
+			Expect(svc.Annotations).NotTo(HaveKey("custom-annotation"))
+		})
 	})
 
 	Context("When webhook mutates pod template", func() {
