@@ -131,14 +131,60 @@ func LoadImageToKindClusterWithName(name string) error {
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
 		cluster = v
 	}
-	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
+
 	kindBinary := defaultKindBinary
 	if v, ok := os.LookupEnv("KIND"); ok {
 		kindBinary = v
 	}
-	cmd := exec.Command(kindBinary, kindOptions...)
-	_, err := Run(cmd)
-	return err
+
+	containerTool := "docker"
+	if v, ok := os.LookupEnv("CONTAINER_TOOL"); ok {
+		containerTool = v
+	}
+
+	if containerTool == "podman" {
+		// For podman, we need to save the image to a tarball and load it into kind
+		// because kind load docker-image doesn't always work reliably with podman
+		saveCmd := exec.Command("podman", "save", name)
+		loadCmd := exec.Command(kindBinary, "load", "image-archive", "/dev/stdin", "--name", cluster)
+
+		var err error
+		loadCmd.Stdin, err = saveCmd.StdoutPipe()
+		if err != nil {
+			return fmt.Errorf("failed to create stdout pipe for podman save: %w", err)
+		}
+
+		var loadErr bytes.Buffer
+		loadCmd.Stderr = &loadErr
+
+		if err := loadCmd.Start(); err != nil {
+			return fmt.Errorf("failed to start kind load: %w", err)
+		}
+
+		defer func() {
+			if loadCmd.ProcessState == nil && loadCmd.Process != nil {
+				_ = loadCmd.Process.Kill()
+				_ = loadCmd.Wait()
+			}
+		}()
+
+		if err := saveCmd.Run(); err != nil {
+			return fmt.Errorf("failed to run podman save: %w", err)
+		}
+
+		if err := loadCmd.Wait(); err != nil {
+			return fmt.Errorf("failed to wait for kind load: %w, stderr: %s", err, loadErr.String())
+		}
+	} else {
+		// For docker (the default), use kind load docker-image
+		kindOptions := []string{"load", "docker-image", name, "--name", cluster}
+		cmd := exec.Command(kindBinary, kindOptions...)
+		_, err := Run(cmd)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetNonEmptyLines converts given command output string into individual objects
