@@ -116,7 +116,7 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// labels merges user-provided labels from MonarchMesh with controller-managed labels.
 	// Controller-managed labels take precedence to ensure selectors work correctly.
 	// Only applied to StatefulSet metadata for Kueue integration.
-	labels := mergeLabels(mesh.Labels, selectorLabels, log)
+	labels := mergeStringMaps(mesh.Labels, selectorLabels, "label", log)
 
 	svcName := mesh.Name + r.Config.ServiceSuffix
 
@@ -176,10 +176,14 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 
 		// Always record the desired hash so future reconciles can detect real changes.
-		if ss.Annotations == nil {
-			ss.Annotations = make(map[string]string)
-		}
-		ss.Annotations[podTemplateHashAnnotation] = desiredHash
+		// Annotations from MonarchMesh metadata are propagated to the StatefulSet alongside
+		// the controller-managed hash. Controller-managed annotations take precedence on collision.
+		ss.Annotations = mergeStringMaps(
+			mesh.Annotations,
+			map[string]string{podTemplateHashAnnotation: desiredHash},
+			"annotation",
+			log,
+		)
 
 		return ctrl.SetControllerReference(&mesh, ss, r.Scheme)
 	})
@@ -221,16 +225,17 @@ func (r *MonarchMeshReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// mergeLabels merges base labels with override labels.
-// Override labels take precedence when the same key exists in both maps.
-// Returns a new map without modifying the input maps.
-func mergeLabels(base, override map[string]string, log logr.Logger) map[string]string {
+// mergeStringMaps merges base entries with override entries.
+// Override values take precedence when the same key exists in both maps.
+// Returns a new map without modifying the input maps. The kind parameter
+// (e.g. "label" or "annotation") is used in the override warning log message.
+func mergeStringMaps(base, override map[string]string, kind string, log logr.Logger) map[string]string {
 	result := make(map[string]string, len(base)+len(override))
 	maps.Copy(result, base)
-	// Warn when user-provided labels are being overridden by controller-managed labels.
+	// Warn when user-provided values are being overridden by controller-managed values.
 	for key, overrideValue := range override {
 		if baseValue, exists := base[key]; exists && baseValue != overrideValue {
-			log.Info("User-provided label overridden by controller-managed label",
+			log.Info("User-provided "+kind+" overridden by controller-managed "+kind,
 				"key", key, "userValue", baseValue, "controllerValue", overrideValue)
 		}
 		result[key] = overrideValue
