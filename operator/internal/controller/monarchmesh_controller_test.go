@@ -104,11 +104,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 3,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -160,11 +162,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: replicas,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -223,11 +227,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 2,
 					Port:     customPort,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -260,11 +266,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 3,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -299,11 +307,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 2,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -351,11 +361,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 2,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -422,11 +434,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 2,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -462,6 +476,125 @@ var _ = Describe("MonarchMesh Controller", func() {
 			Expect(k8sClient.Get(ctx, svcName, svc)).To(Succeed())
 			Expect(svc.Annotations).NotTo(HaveKey("kueue.x-k8s.io/priority-class"))
 			Expect(svc.Annotations).NotTo(HaveKey("custom-annotation"))
+		})
+
+		It("should propagate labels and annotations from PodTemplate.ObjectMeta to the pod template", func() {
+			By("Creating the MonarchMesh resource with PodTemplate metadata")
+			mesh := &monarchv1alpha1.MonarchMesh{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+				},
+				Spec: monarchv1alpha1.MonarchMeshSpec{
+					Replicas: 2,
+					PodTemplate: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								"pod-label": "pod-value",
+								// Will be overridden by controller-managed selector label.
+								config.AppLabelKey: "user-supplied-app",
+							},
+							Annotations: map[string]string{
+								"pod-annotation":          "pod-anno-value",
+								"prometheus.io/scrape":    "true",
+								"sidecar.istio.io/inject": "false",
+							},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mesh)).To(Succeed())
+
+			By("Reconciling the resource")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying user labels are merged into the pod template")
+			ss := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, ss)).To(Succeed())
+
+			// User-supplied pod-template label is preserved.
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue("pod-label", "pod-value"))
+			// Controller-managed selector labels are still present and win on collision
+			// so the StatefulSet selector keeps matching.
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue(config.MeshLabelKey, resourceName))
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue(config.AppLabelKey, config.AppLabelValue))
+			Expect(ss.Spec.Template.Labels[config.AppLabelKey]).NotTo(Equal("user-supplied-app"))
+
+			By("Verifying user annotations are preserved on the pod template")
+			Expect(ss.Spec.Template.Annotations).To(HaveKeyWithValue("pod-annotation", "pod-anno-value"))
+			Expect(ss.Spec.Template.Annotations).To(HaveKeyWithValue("prometheus.io/scrape", "true"))
+			Expect(ss.Spec.Template.Annotations).To(HaveKeyWithValue("sidecar.istio.io/inject", "false"))
+
+			By("Verifying PodTemplate metadata does NOT leak onto the StatefulSet itself")
+			Expect(ss.Labels).NotTo(HaveKey("pod-label"))
+			Expect(ss.Annotations).NotTo(HaveKey("pod-annotation"))
+			Expect(ss.Annotations).NotTo(HaveKey("prometheus.io/scrape"))
+
+			By("Verifying selector still only contains controller-managed labels")
+			Expect(ss.Spec.Selector.MatchLabels).NotTo(HaveKey("pod-label"))
+			Expect(ss.Spec.Selector.MatchLabels).To(HaveKeyWithValue(config.MeshLabelKey, resourceName))
+			Expect(ss.Spec.Selector.MatchLabels).To(HaveKeyWithValue(config.AppLabelKey, config.AppLabelValue))
+		})
+
+		It("should update the pod template when PodTemplate.ObjectMeta changes", func() {
+			By("Creating the MonarchMesh resource with initial PodTemplate metadata")
+			mesh := &monarchv1alpha1.MonarchMesh{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+				},
+				Spec: monarchv1alpha1.MonarchMeshSpec{
+					Replicas: 1,
+					PodTemplate: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels:      map[string]string{"pod-label": "v1"},
+							Annotations: map[string]string{"pod-annotation": "v1"},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mesh)).To(Succeed())
+
+			By("Running initial reconcile")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			ss := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, ss)).To(Succeed())
+			initialHash := ss.Annotations[podTemplateHashAnnotation]
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue("pod-label", "v1"))
+			Expect(ss.Spec.Template.Annotations).To(HaveKeyWithValue("pod-annotation", "v1"))
+
+			By("Updating PodTemplate metadata on the CRD")
+			Expect(k8sClient.Get(ctx, typeNamespacedName, mesh)).To(Succeed())
+			mesh.Spec.PodTemplate.Labels["pod-label"] = "v2"
+			mesh.Spec.PodTemplate.Annotations["pod-annotation"] = "v2"
+			Expect(k8sClient.Update(ctx, mesh)).To(Succeed())
+
+			By("Reconciling after CRD change")
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying the pod template metadata was updated and hash rotated")
+			Expect(k8sClient.Get(ctx, typeNamespacedName, ss)).To(Succeed())
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue("pod-label", "v2"))
+			Expect(ss.Spec.Template.Annotations).To(HaveKeyWithValue("pod-annotation", "v2"))
+			Expect(ss.Annotations[podTemplateHashAnnotation]).NotTo(Equal(initialHash))
 		})
 	})
 
@@ -499,11 +632,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 2,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "us-west-2.amazonaws.com/monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "us-west-2.amazonaws.com/monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -543,11 +678,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 2,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "us-west-2.amazonaws.com/monarch:v1",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "us-west-2.amazonaws.com/monarch:v1",
+							}},
+						},
 					},
 				},
 			}
@@ -569,7 +706,7 @@ var _ = Describe("MonarchMesh Controller", func() {
 
 			By("Updating the CRD spec with a new image version")
 			Expect(k8sClient.Get(ctx, nn, mesh)).To(Succeed())
-			mesh.Spec.PodTemplate.Containers[0].Image = "us-west-2.amazonaws.com/monarch:v2"
+			mesh.Spec.PodTemplate.Spec.Containers[0].Image = "us-west-2.amazonaws.com/monarch:v2"
 			Expect(k8sClient.Update(ctx, mesh)).To(Succeed())
 
 			By("Reconciling after CRD change")
@@ -602,11 +739,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 				},
 				Spec: monarchv1alpha1.MonarchMeshSpec{
 					Replicas: 1,
-					PodTemplate: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "monarch:latest",
-						}},
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Name:  "worker",
+								Image: "monarch:latest",
+							}},
+						},
 					},
 				},
 			}
@@ -661,11 +800,13 @@ var _ = Describe("MonarchMesh Controller", func() {
 					},
 					Spec: monarchv1alpha1.MonarchMeshSpec{
 						Replicas: 1,
-						PodTemplate: corev1.PodSpec{
-							Containers: []corev1.Container{{
-								Name:  "worker",
-								Image: "monarch:latest",
-							}},
+						PodTemplate: corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{{
+									Name:  "worker",
+									Image: "monarch:latest",
+								}},
+							},
 						},
 					},
 				}

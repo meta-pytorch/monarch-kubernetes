@@ -25,9 +25,11 @@ type MonarchMeshSpec struct {
 	// +optional
 	Port int32 `json:"port,omitempty"`
 
-	// PodTemplate defines the pod specification for Monarch workers.
-	// Labels and annotations are inherited from the MonarchMesh metadata.
-	PodTemplate corev1.PodSpec `json:"podTemplate"`
+	// PodTemplate defines the pod template (metadata + spec) for Monarch workers.
+	// Controller-managed selector labels are merged into PodTemplate.Labels;
+	// user-supplied labels and annotations on PodTemplate.ObjectMeta are propagated
+	// to the resulting pods.
+	PodTemplate corev1.PodTemplateSpec `json:"podTemplate"`
 }
 
 // MonarchMeshStatus defines the observed state of MonarchMesh.

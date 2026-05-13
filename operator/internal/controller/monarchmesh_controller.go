@@ -36,14 +36,15 @@ type MonarchMeshReconciler struct {
 	Config Config
 }
 
-// podTemplateHashAnnotation stores the SHA-256 hash of the desired PodSpec from the CRD.
-// This allows the controller to detect actual user changes to the pod template and avoid
-// overwriting server-side mutations (e.g., from admission webhooks that rewrite image URLs).
+// podTemplateHashAnnotation stores the SHA-256 hash of the desired PodTemplateSpec from
+// the CRD. This allows the controller to detect actual user changes to the pod template
+// and avoid overwriting server-side mutations (e.g., from admission webhooks that rewrite
+// image URLs).
 const podTemplateHashAnnotation = "monarch.pytorch.org/desired-pod-template-hash"
 
-// computePodTemplateHash returns a SHA-256 hex digest of the deep-printed PodSpec inspired from
-// "k8s.io/kubernetes/pkg/util/hash".
-func computePodTemplateHash(spec corev1.PodSpec) string {
+// computePodTemplateHash returns a SHA-256 hex digest of the deep-printed PodTemplateSpec
+// inspired from "k8s.io/kubernetes/pkg/util/hash".
+func computePodTemplateHash(template corev1.PodTemplateSpec) string {
 	hasher := sha256.New()
 	printer := spew.ConfigState{
 		Indent:         " ",
@@ -51,7 +52,7 @@ func computePodTemplateHash(spec corev1.PodSpec) string {
 		DisableMethods: true,
 		SpewKeys:       true,
 	}
-	_, _ = printer.Fprintf(hasher, "%#v", spec)
+	_, _ = printer.Fprintf(hasher, "%#v", template)
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
 
@@ -161,19 +162,22 @@ func (r *MonarchMeshReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// This can speed up large worker pod launches.
 		// See: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#parallel-pod-management
 		ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
-		ss.Spec.Template.Labels = selectorLabels
 
-		// Only overwrite the pod template when the desired spec actually changed (hash differs)
-		// or on initial creation. This avoids fighting with admission webhooks that mutate
-		// fields like image URLs (e.g., ECR mirror rewrites).
+		// Only overwrite the pod template when the desired template actually changed (hash
+		// differs) or on initial creation. This avoids fighting with admission webhooks that
+		// mutate fields like image URLs (e.g., ECR mirror rewrites).
 		desiredHash := computePodTemplateHash(mesh.Spec.PodTemplate)
 		currentHash := ""
 		if ss.Annotations != nil {
 			currentHash = ss.Annotations[podTemplateHashAnnotation]
 		}
 		if currentHash != desiredHash || ss.CreationTimestamp.IsZero() {
-			ss.Spec.Template.Spec = mesh.Spec.PodTemplate
+			ss.Spec.Template = *mesh.Spec.PodTemplate.DeepCopy()
 		}
+		// Always enforce controller-managed selector labels on the pod template; user labels
+		// from PodTemplate.ObjectMeta are merged underneath. Controller-managed labels win on
+		// collision so the StatefulSet selector keeps matching.
+		ss.Spec.Template.Labels = mergeStringMaps(ss.Spec.Template.Labels, selectorLabels, "label", log)
 
 		// Always record the desired hash so future reconciles can detect real changes.
 		// Annotations from MonarchMesh metadata are propagated to the StatefulSet alongside
