@@ -284,14 +284,15 @@ spec:
   replicas: 2
   port: 26600
   podTemplate:
-    containers:
-    - name: worker
-      image: busybox:latest
-      imagePullPolicy: IfNotPresent
-      command: ["sleep", "infinity"]
-      ports:
-      - name: monarch
-        containerPort: 26600
+    spec:
+      containers:
+      - name: worker
+        image: busybox:latest
+        imagePullPolicy: IfNotPresent
+        command: ["sleep", "infinity"]
+        ports:
+        - name: monarch
+          containerPort: 26600
 `, meshName, testNamespace)
 
 			cmd = exec.Command("kubectl", "apply", "-f", "-")
@@ -378,14 +379,15 @@ spec:
   replicas: 2
   port: 26600
   podTemplate:
-    containers:
-    - name: worker
-      image: busybox:latest
-      imagePullPolicy: IfNotPresent
-      command: ["sleep", "infinity"]
-      ports:
-      - name: monarch
-        containerPort: 26600
+    spec:
+      containers:
+      - name: worker
+        image: busybox:latest
+        imagePullPolicy: IfNotPresent
+        command: ["sleep", "infinity"]
+        ports:
+        - name: monarch
+          containerPort: 26600
 `, meshName, testNamespace)
 
 			cmd = exec.Command("kubectl", "apply", "-f", "-")
@@ -465,6 +467,127 @@ spec:
 			Expect(err).NotTo(HaveOccurred())
 		})
 
+		It("should propagate podTemplate labels and annotations to the pods", func() {
+			const testNamespace = "monarch-e2e-podmeta"
+			const meshName = "podmetamesh"
+
+			By("creating a test namespace")
+			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
+
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("applying the MonarchMesh CRD with podTemplate metadata")
+			monarchMeshYAML := fmt.Sprintf(`
+apiVersion: monarch.pytorch.org/v1alpha1
+kind: MonarchMesh
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  replicas: 1
+  port: 26600
+  podTemplate:
+    metadata:
+      labels:
+        pod-label: pod-value
+        team: monarch
+      annotations:
+        pod-annotation: pod-anno-value
+        prometheus.io/scrape: "true"
+    spec:
+      containers:
+      - name: worker
+        image: busybox:latest
+        imagePullPolicy: IfNotPresent
+        command: ["sleep", "infinity"]
+        ports:
+        - name: monarch
+          containerPort: 26600
+`, meshName, testNamespace)
+
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(monarchMeshYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply MonarchMesh CRD")
+
+			By("waiting for the pod to become ready")
+			verifyReadyReplicas := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "monarchmesh", meshName,
+					"-n", testNamespace,
+					"-o", "jsonpath={.status.readyReplicas}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("1"), "Expected readyReplicas to be 1")
+			}
+			Eventually(verifyReadyReplicas, 3*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying the StatefulSet pod template carries user labels and selector labels")
+			cmd = exec.Command("kubectl", "get", "statefulset", meshName,
+				"-n", testNamespace,
+				"-o", "jsonpath={.spec.template.metadata.labels}")
+			tmplLabels, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(tmplLabels).To(ContainSubstring(`"pod-label":"pod-value"`))
+			Expect(tmplLabels).To(ContainSubstring(`"team":"monarch"`))
+			Expect(tmplLabels).To(ContainSubstring(
+				fmt.Sprintf(`"monarch.pytorch.org/mesh-name":"%s"`, meshName)))
+
+			By("verifying the StatefulSet pod template carries user annotations")
+			cmd = exec.Command("kubectl", "get", "statefulset", meshName,
+				"-n", testNamespace,
+				"-o", "jsonpath={.spec.template.metadata.annotations}")
+			tmplAnnotations, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(tmplAnnotations).To(ContainSubstring(`"pod-annotation":"pod-anno-value"`))
+			Expect(tmplAnnotations).To(ContainSubstring(`"prometheus.io/scrape":"true"`))
+
+			By("verifying the labels and annotations land on the actual pods")
+			cmd = exec.Command("kubectl", "get", "pods",
+				"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s,pod-label=pod-value", meshName),
+				"-n", testNamespace,
+				"-o", "jsonpath={.items[*].metadata.name}")
+			matchedPods, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(utils.GetNonEmptyLines(strings.ReplaceAll(matchedPods, " ", "\n"))).
+				To(HaveLen(1), "Expected exactly 1 pod matched by the user-supplied label")
+
+			cmd = exec.Command("kubectl", "get", "pods",
+				"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+				"-n", testNamespace,
+				"-o", "jsonpath={.items[0].metadata.annotations}")
+			podAnnotations, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(podAnnotations).To(ContainSubstring(`"pod-annotation":"pod-anno-value"`))
+			Expect(podAnnotations).To(ContainSubstring(`"prometheus.io/scrape":"true"`))
+
+			By("verifying podTemplate metadata does NOT leak onto the StatefulSet itself")
+			cmd = exec.Command("kubectl", "get", "statefulset", meshName,
+				"-n", testNamespace,
+				"-o", "jsonpath={.metadata.labels}")
+			ssLabels, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ssLabels).NotTo(ContainSubstring(`"pod-label"`))
+			Expect(ssLabels).NotTo(ContainSubstring(`"team":"monarch"`))
+
+			cmd = exec.Command("kubectl", "get", "statefulset", meshName,
+				"-n", testNamespace,
+				"-o", "jsonpath={.metadata.annotations}")
+			ssAnnotations, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ssAnnotations).NotTo(ContainSubstring(`"pod-annotation"`))
+			Expect(ssAnnotations).NotTo(ContainSubstring(`"prometheus.io/scrape"`))
+
+			By("deleting the MonarchMesh CRD")
+			cmd = exec.Command("kubectl", "delete", "monarchmesh", meshName, "-n", testNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 		Context("MonarchMesh Name Validation", func() {
 			It("should fail to apply a MonarchMesh with hyphens in the name", func() {
 				const testNamespace = "monarch-e2e-validation"
@@ -490,9 +613,10 @@ metadata:
 spec:
   replicas: 1
   podTemplate:
-    containers:
-    - name: worker
-      image: busybox:latest
+    spec:
+      containers:
+      - name: worker
+        image: busybox:latest
 `, invalidMeshName, testNamespace)
 
 				cmd = exec.Command("kubectl", "apply", "-f", "-")
