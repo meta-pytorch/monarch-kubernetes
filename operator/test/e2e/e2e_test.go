@@ -465,6 +465,106 @@ spec:
 			Expect(err).NotTo(HaveOccurred())
 		})
 
+		It("should propagate pod template metadata to pods", func() {
+			const testNamespace = "monarch-e2e-podmeta"
+			const meshName = "podmetamesh"
+
+			By("creating a test namespace")
+			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
+
+			DeferCleanup(func() {
+				By("cleaning up the test namespace")
+				cmd := exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("applying a MonarchMesh with pod-level labels and annotations")
+			monarchMeshYAML := fmt.Sprintf(`
+apiVersion: monarch.pytorch.org/v1alpha1
+kind: MonarchMesh
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  replicas: 2
+  port: 26600
+  podTemplateLabels:
+    team: monarch
+    workload: training
+  podTemplateAnnotations:
+    custom-pod-annotation: value-1
+    sidecar.istio.io/inject: "false"
+  podTemplate:
+    containers:
+    - name: worker
+      image: busybox:latest
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      ports:
+      - name: monarch
+        containerPort: 26600
+`, meshName, testNamespace)
+
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(monarchMeshYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply MonarchMesh CRD")
+
+			By("waiting for pods to be created")
+			verifyPodsCreated := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pods",
+					"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+					"-n", testNamespace,
+					"-o", "jsonpath={.items[*].metadata.name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				podNames := utils.GetNonEmptyLines(strings.ReplaceAll(output, " ", "\n"))
+				g.Expect(podNames).To(HaveLen(2), "Expected 2 pods to be created")
+			}
+			Eventually(verifyPodsCreated, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying user pod labels are present on every pod")
+			cmd = exec.Command("kubectl", "get", "pods",
+				"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+				"-n", testNamespace,
+				"-o", "jsonpath={.items[*].metadata.labels.team}")
+			teamLabels, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(teamLabels).To(Equal("monarch monarch"))
+
+			cmd = exec.Command("kubectl", "get", "pods",
+				"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+				"-n", testNamespace,
+				"-o", "jsonpath={.items[*].metadata.labels.workload}")
+			workloadLabels, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(workloadLabels).To(Equal("training training"))
+
+			By("verifying user pod annotations are present on every pod")
+			cmd = exec.Command("kubectl", "get", "pods",
+				"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+				"-n", testNamespace,
+				"-o", `jsonpath={.items[*].metadata.annotations.custom-pod-annotation}`)
+			customAnnotations, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(customAnnotations).To(Equal("value-1 value-1"))
+
+			cmd = exec.Command("kubectl", "get", "pods",
+				"-l", fmt.Sprintf("monarch.pytorch.org/mesh-name=%s", meshName),
+				"-n", testNamespace,
+				"-o", `jsonpath={.items[*].metadata.annotations.sidecar\.istio\.io/inject}`)
+			istioAnnotations, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(istioAnnotations).To(Equal("false false"))
+
+			By("deleting the MonarchMesh CRD")
+			cmd = exec.Command("kubectl", "delete", "monarchmesh", meshName, "-n", testNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 		Context("MonarchMesh Name Validation", func() {
 			It("should fail to apply a MonarchMesh with hyphens in the name", func() {
 				const testNamespace = "monarch-e2e-validation"

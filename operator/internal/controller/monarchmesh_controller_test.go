@@ -463,6 +463,59 @@ var _ = Describe("MonarchMesh Controller", func() {
 			Expect(svc.Annotations).NotTo(HaveKey("kueue.x-k8s.io/priority-class"))
 			Expect(svc.Annotations).NotTo(HaveKey("custom-annotation"))
 		})
+
+		It("should propagate pod template labels and annotations to pods", func() {
+			By("Creating the MonarchMesh resource with pod template metadata")
+			mesh := &monarchv1alpha1.MonarchMesh{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: "default",
+				},
+				Spec: monarchv1alpha1.MonarchMeshSpec{
+					Replicas: 2,
+					PodTemplateLabels: map[string]string{
+						"team":             "monarch",
+						"workload":         "training",
+						config.AppLabelKey: "user-attempted-override",
+					},
+					PodTemplateAnnotations: map[string]string{
+						"sidecar.istio.io/inject": "false",
+						"custom-pod-annotation":   "value-1",
+					},
+					PodTemplate: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "worker",
+							Image: "monarch:latest",
+						}},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mesh)).To(Succeed())
+
+			By("Reconciling the resource")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying user pod template labels are present")
+			ss := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, ss)).To(Succeed())
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue("team", "monarch"))
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue("workload", "training"))
+
+			By("Verifying controller-managed selector labels win on collision")
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue(config.AppLabelKey, config.AppLabelValue))
+			Expect(ss.Spec.Template.Labels).To(HaveKeyWithValue(config.MeshLabelKey, resourceName))
+
+			By("Verifying user pod template annotations are present")
+			Expect(ss.Spec.Template.Annotations).To(HaveKeyWithValue("sidecar.istio.io/inject", "false"))
+			Expect(ss.Spec.Template.Annotations).To(HaveKeyWithValue("custom-pod-annotation", "value-1"))
+
+			By("Verifying pod template metadata does not leak onto the StatefulSet metadata")
+			Expect(ss.Labels).NotTo(HaveKey("team"))
+			Expect(ss.Annotations).NotTo(HaveKey("custom-pod-annotation"))
+		})
 	})
 
 	Context("When webhook mutates pod template", func() {

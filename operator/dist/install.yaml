@@ -8421,6 +8421,19 @@ spec:
                 required:
                 - containers
                 type: object
+              podTemplateAnnotations:
+                additionalProperties:
+                  type: string
+                description: PodTemplateAnnotations are propagated to Monarch worker
+                  pods.
+                type: object
+              podTemplateLabels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  PodTemplateLabels are propagated to Monarch worker pods. Controller-managed
+                  selector labels win on collision to keep the StatefulSet selector valid.
+                type: object
               port:
                 default: 26600
                 description: Port is the port that Monarch workers listen on for mesh

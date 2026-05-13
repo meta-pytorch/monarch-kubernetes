@@ -25,8 +25,16 @@ type MonarchMeshSpec struct {
 	// +optional
 	Port int32 `json:"port,omitempty"`
 
+	// PodTemplateLabels are propagated to Monarch worker pods. Controller-managed
+	// selector labels win on collision to keep the StatefulSet selector valid.
+	// +optional
+	PodTemplateLabels map[string]string `json:"podTemplateLabels,omitempty"`
+
+	// PodTemplateAnnotations are propagated to Monarch worker pods.
+	// +optional
+	PodTemplateAnnotations map[string]string `json:"podTemplateAnnotations,omitempty"`
+
 	// PodTemplate defines the pod specification for Monarch workers.
-	// Labels and annotations are inherited from the MonarchMesh metadata.
 	PodTemplate corev1.PodSpec `json:"podTemplate"`
 }
 
