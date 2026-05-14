@@ -17,7 +17,10 @@
 
 ## Compatibility
 
-- [Monarch](https://github.com/meta-pytorch/monarch) v0.3.0 or higher
+| Monarch       | monarch-operator |
+|---------------|------------------|
+| 0.3.0 – 0.4.1 | 0.1.x            |
+| >=0.5.0       | 0.2.x            |
 
 ## Installation
 
